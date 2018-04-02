@@ -2,9 +2,13 @@ package slave
 
 import (
 	"context"
+	"net"
 	"sync"
+	"time"
 
 	"github.com/juju/errors"
+	"github.com/ngaut/log"
+	"github.com/sirupsen/logrus"
 	"github.com/sryanyuan/binp/anumber"
 
 	"github.com/sryanyuan/binp/bevent"
@@ -21,6 +25,12 @@ const (
 	defaultEventBufferSize = 10240
 )
 
+// MasterStatus is status of master
+type MasterStatus struct {
+	Version string   `json:"version"`
+	Pos     Position `json:"position"`
+}
+
 // ReplicationConfig specify the master information
 type ReplicationConfig struct {
 	Host            string   `json:"host" toml:"host"`
@@ -32,6 +42,7 @@ type ReplicationConfig struct {
 	Pos             Position `json:"position" toml:"position"`
 	EnableGtid      bool     `json:"enable-gtid" toml:"enable-gtid"`
 	EventBufferSize int      `json:"event-buffer-size" toml:"event-buffer-size"`
+	KeepAlivePeriod int      `json:"keepalive-period" toml:"keepalive-period"`
 }
 
 // Slave represents a slave node like a mysql slave to participate the mysql replication
@@ -45,6 +56,7 @@ type Slave struct {
 	currentPos Position
 	eq         *eventQueue
 	conn       *slaveConn
+	mstatus    MasterStatus
 }
 
 // NewSlave creates a new slave
@@ -135,12 +147,35 @@ func (s *Slave) prepare() error {
 func (s *Slave) registerSlave() error {
 	if s.conn != nil {
 		s.conn.Close()
+		s.mstatus.Version = ""
+		s.mstatus.Pos.Filename = ""
+		s.mstatus.Pos.Gtid = ""
+		s.mstatus.Pos.Offset = 0
 	}
 
 	var err error
 
+	// Connect to mysql
 	s.conn = &slaveConn{}
 	err = s.conn.Connect(s.config.Host, s.config.Port, s.config.Username, s.config.Password, "")
+	if nil != err {
+		return errors.Trace(err)
+	}
+	s.mstatus = *s.conn.getMasterStatus()
+	log.Infof("Connect to mysql %v:%v success", s.config.Host, s.config.Port)
+	log.Infof("Master status: %v", s.mstatus)
+
+	// Set keepalive period
+	if s.config.KeepAlivePeriod != 0 {
+		if tcpconn, ok := s.conn.conn.(*net.TCPConn); ok {
+			tcpconn.SetKeepAlive(true)
+			tcpconn.SetKeepAlivePeriod(time.Second * time.Duration(s.config.KeepAlivePeriod))
+			logrus.Infof("Update mysql connection keepalive time to %v seconds success",
+				s.config.KeepAlivePeriod)
+		}
+	}
+
+	_, err = s.conn.executeCommand("SHOW GLOBAL VARIABLES LIKE 'BINLOG_CHECKSUM'")
 	if nil != err {
 		return errors.Trace(err)
 	}

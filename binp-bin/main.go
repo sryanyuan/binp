@@ -1,13 +1,15 @@
 package main
 
 import (
-	"github.com/Sirupsen/logrus"
+	"github.com/juju/errors"
+	"github.com/sirupsen/logrus"
 	"github.com/sryanyuan/binp/slave"
 )
 
 func main() {
 	var err error
 	var config AppConfig
+	config.Log.Level = "debug"
 
 	if err = initLog(&config.Log); nil != err {
 		logrus.Errorf("init log error = %v", err)
@@ -21,5 +23,7 @@ func main() {
 		Password: "password",
 	})
 
-	slv.Start(slave.Position{})
+	if err = slv.Start(slave.Position{}); nil != err {
+		logrus.Error(errors.Details(err))
+	}
 }

@@ -7,14 +7,33 @@ import (
 // CapabilityFlags
 // https://dev.mysql.com/doc/internals/en/capability-flags.html
 const (
-	// ClientConnectWithDB can contains a database name in handshake response
-	ClientConnectWithDB = 0x00000008
-	// ClientPluginAuth represents client supports authentication plugins.
-	ClientPluginAuth = 0x00080000
-	// ClientSecureConnection represents client supports Authentication::Native41
-	ClientSecureConnection = 0x00008000
-	// ClientProtocol41 represents server supports the 4.1 protocol
-	ClientProtocol41 = 0x00000200
+	clientLongPassword = 0x00000001
+	clientLongFlag     = 0x00000004
+	// clientConnectWithDB can contains a database name in handshake response
+	clientConnectWithDB = 0x00000008
+	// clientProtocol41 represents server supports the 4.1 protocol
+	clientProtocol41 = 0x00000200
+	// clientTransactions, server can send status flags in EOF_Packet.
+	clientTransactions = 0x00002000
+	// clientSecureConnection represents client supports Authentication::Native41
+	clientSecureConnection = 0x00008000
+	// clientPluginAuth represents client supports authentication plugins.
+	clientPluginAuth = 0x00080000
+	// clientSessionTrace can contains session-state changes after OK packet if server set the flag
+	clientSessionTrace = 0x00800000
+)
+
+const (
+	packetHeaderOK          = 0x00
+	packetHeaderEOF         = 0xfe
+	packetHeaderLocalInFile = 0xfb
+	packetHeaderERR         = 0xff
+)
+
+//
+const (
+	// https://dev.mysql.com/doc/internals/en/com-query.html
+	comQuery = 0x03
 )
 
 // Charset SELECT id, collation_name FROM information_schema.collations ORDER BY id;
@@ -57,6 +76,7 @@ const (
 )
 
 const (
+	// MySQLNativePasswordPlugin is the mysql native password auth type
 	MySQLNativePasswordPlugin = "mysql_native_password"
 )
 
@@ -144,12 +164,14 @@ func (i *LenencInt) Set(v uint64) {
 	i.FromData(buf[:])
 }
 
+// LenencString is a length prefixed string
 type LenencString struct {
 	Len   LenencInt
 	Value string
 	EOF   bool
 }
 
+// FromData parse binary data to lenenc string
 func (s *LenencString) FromData(data []byte) int {
 	// Parse length first
 	parsed := s.Len.FromData(data)

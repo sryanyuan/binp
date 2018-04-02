@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -17,6 +17,7 @@ const (
 	defaultLogFormat     = "text"
 )
 
+// LogConfig is the log config of binp
 type LogConfig struct {
 	// Level options: [debug, info, warning, error, fatal]
 	Level string

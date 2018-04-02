@@ -24,6 +24,15 @@ const (
 	maxPayloadLength = 1<<24 - 1
 )
 
+var (
+	// ErrMalformPacket represents a response with the unknown header
+	ErrMalformPacket = errors.New("Malform packet format")
+)
+
+type responseOptions struct {
+	binary bool
+}
+
 type slaveConn struct {
 	mu            sync.Mutex
 	status        int64
@@ -32,6 +41,7 @@ type slaveConn struct {
 	r             io.Reader
 	seq           uint8
 	capacityFlags uint32
+	mstatus       MasterStatus
 	// TODO: support tls
 	tlsConfig *tls.Config
 }
@@ -64,6 +74,10 @@ func (c *slaveConn) close() {
 	}
 }
 
+func (c *slaveConn) getMasterStatus() *MasterStatus {
+	return &c.mstatus
+}
+
 func (c *slaveConn) Connect(host string, port uint16, username, password, database string) error {
 	c.mu.Lock()
 	if c.status == connStatusConnected {
@@ -92,16 +106,88 @@ func (c *slaveConn) Connect(host string, port uint16, username, password, databa
 	return nil
 }
 
+func (c *slaveConn) execute(command string, args ...interface{}) (*PacketOK, error) {
+	if len(args) == 0 {
+		return c.executeCommand(command)
+	}
+	return nil, nil
+}
+
+func (c *slaveConn) executeCommand(command string) (*PacketOK, error) {
+	var pcq PacketComQuery
+	pcq.command = command
+
+	data, err := pcq.Encode()
+	if nil != err {
+		return nil, errors.Trace(err)
+	}
+	if err = c.WritePacket(data); nil != err {
+		return nil, errors.Trace(err)
+	}
+
+	return c.readResponse(&responseOptions{binary: false})
+}
+
+// readResponse parses the response data, all response data is start with the flag
+// the query response can be one of <ERR PACKET> <OK PACKET> <LOCAL_INFILE REQUEST> <ResultSet>
+// https://dev.mysql.com/doc/internals/en/com-query-response.html
+func (c *slaveConn) readResponse(options *responseOptions) (*PacketOK, error) {
+	rspData, err := c.ReadPacket()
+	if nil != err {
+		return nil, errors.Trace(err)
+	}
+
+	switch rspData[0] {
+	case packetHeaderOK:
+		{
+			pok, err := c.readPacketOK(rspData)
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			return pok, nil
+		}
+	case packetHeaderERR:
+		{
+			perr, err := c.readPacketERR(rspData)
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			return nil, errors.New(perr.ErrorMessage)
+		}
+	case packetHeaderLocalInFile:
+		{
+			return nil, ErrMalformPacket
+		}
+	}
+
+	// Read the following result set
+	return c.readResultSet(rspData, options)
+}
+
+// readResultSet decodes the text result set
+// https://dev.mysql.com/doc/internals/en/com-query-response.html
+func (c *slaveConn) readResultSet(data []byte, options *responseOptions) (*PacketOK, error) {
+	// Skip header
+	wptr := 1
+	// Reading column count
+	var ln LenencInt
+	offset := ln.FromData(data[wptr:])
+	if offset+1 != len(data)+1 {
+		return nil, ErrMalformPacket
+	}
+	return nil, nil
+}
+
 func (c *slaveConn) handshake(username, password, database string) error {
 	handshake, err := c.readHandshake()
 	if nil != err {
 		return errors.Trace(err)
 	}
 
-	if 0 == (handshake.CapabilityFlags & ClientProtocol41) {
+	if 0 == (handshake.CapabilityFlags & clientProtocol41) {
 		return errors.New("protocol version < 4.1 is not supported")
 	}
-	if 0 == (handshake.CapabilityFlags & ClientSecureConnection) {
+	if 0 == (handshake.CapabilityFlags & clientSecureConnection) {
 		return errors.New("protocol only support secure connection")
 	}
 
@@ -111,16 +197,66 @@ func (c *slaveConn) handshake(username, password, database string) error {
 	rsp.Username = username
 	rsp.Password = password
 	rsp.Database = database
+	capability := handshake.CapabilityFlags
+	capability |= clientProtocol41
+	capability |= clientSecureConnection
+	capability |= clientLongPassword
+	capability |= clientTransactions
+	capability |= clientLongFlag
+	capability &= handshake.CapabilityFlags
 	rsp.CapabilityFlags = handshake.CapabilityFlags
-	rspData := rsp.Encode(handshake.AuthPluginDataPart)
+	rsp.AuthPluginData = handshake.AuthPluginDataPart
+	rspData := rsp.Encode()
 	if err = c.WritePacket(rspData); nil != err {
 		return errors.Trace(err)
 	}
-	c.capacityFlags = handshake.CapabilityFlags
+	c.capacityFlags = capability
+
+	// Update master status
+	c.mstatus.Version = handshake.ServerVersion
 
 	// Read server response
+	data, err := c.ReadPacket()
+	if nil != err {
+		return errors.Trace(err)
+	}
+	switch data[0] {
+	case packetHeaderOK:
+		{
+			if _, err = c.readPacketOK(data); nil != err {
+				return errors.Trace(err)
+			}
+			// Handshake done
+		}
+	case packetHeaderERR:
+		{
+			perr, err := c.readPacketERR(data)
+			if nil != err {
+				return errors.Trace(err)
+			}
+			return errors.New(perr.ErrorMessage)
+		}
+	}
 
 	return nil
+}
+
+func (c *slaveConn) readPacketOK(data []byte) (*PacketOK, error) {
+	var pok PacketOK
+	pok.capabilityFlags = c.capacityFlags
+	if err := pok.Decode(data); nil != err {
+		return nil, errors.Trace(err)
+	}
+	return &pok, nil
+}
+
+func (c *slaveConn) readPacketERR(data []byte) (*PacketErr, error) {
+	var perr PacketErr
+	perr.capabilityFlags = c.capacityFlags
+	if err := perr.Decode(data); nil != err {
+		return nil, errors.Trace(err)
+	}
+	return &perr, nil
 }
 
 //
