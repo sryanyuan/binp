@@ -140,7 +140,7 @@ func (s *Slave) registerSlave() error {
 	var err error
 
 	s.conn = &slaveConn{}
-	err = s.conn.Connect(s.config.Host, s.config.Port, s.config.Username, s.config.Password)
+	err = s.conn.Connect(s.config.Host, s.config.Port, s.config.Username, s.config.Password, "")
 	if nil != err {
 		return errors.Trace(err)
 	}
