@@ -2,9 +2,10 @@ package slave
 
 import (
 	"context"
-	"net"
 	"sync"
 	"time"
+
+	"github.com/sryanyuan/binp/mconn"
 
 	"github.com/juju/errors"
 	"github.com/ngaut/log"
@@ -55,8 +56,8 @@ type Slave struct {
 	status     anumber.AtomicInt64
 	currentPos Position
 	eq         *eventQueue
-	conn       *slaveConn
-	mstatus    MasterStatus
+	conn       *mconn.Conn
+	mstatus    mconn.ServerInfo
 }
 
 // NewSlave creates a new slave
@@ -147,38 +148,35 @@ func (s *Slave) prepare() error {
 func (s *Slave) registerSlave() error {
 	if s.conn != nil {
 		s.conn.Close()
-		s.mstatus.Version = ""
-		s.mstatus.Pos.Filename = ""
-		s.mstatus.Pos.Gtid = ""
-		s.mstatus.Pos.Offset = 0
 	}
 
 	var err error
 
 	// Connect to mysql
-	s.conn = &slaveConn{}
+	s.conn = &mconn.Conn{}
 	err = s.conn.Connect(s.config.Host, s.config.Port, s.config.Username, s.config.Password, "")
 	if nil != err {
 		return errors.Trace(err)
 	}
-	s.mstatus = *s.conn.getMasterStatus()
 	log.Infof("Connect to mysql %v:%v success", s.config.Host, s.config.Port)
 	log.Infof("Master status: %v", s.mstatus)
 
 	// Set keepalive period
 	if s.config.KeepAlivePeriod != 0 {
-		if tcpconn, ok := s.conn.conn.(*net.TCPConn); ok {
-			tcpconn.SetKeepAlive(true)
-			tcpconn.SetKeepAlivePeriod(time.Second * time.Duration(s.config.KeepAlivePeriod))
+		if s.conn.SetKeepalive(time.Second * time.Duration(s.config.KeepAlivePeriod)) {
 			logrus.Infof("Update mysql connection keepalive time to %v seconds success",
+				s.config.KeepAlivePeriod)
+		} else {
+			logrus.Infof("Update mysql connection keepalive time to %v seconds failed",
 				s.config.KeepAlivePeriod)
 		}
 	}
 
-	_, err = s.conn.executeCommand("SHOW GLOBAL VARIABLES LIKE 'BINLOG_CHECKSUM'")
+	ret, err := s.conn.Exec("SHOW GLOBAL VARIABLES LIKE 'BINLOG_CHECKSUM'")
 	if nil != err {
 		return errors.Trace(err)
 	}
+	_ = ret
 
 	return nil
 }

@@ -1,13 +1,13 @@
-package slave
+package mconn
 
 import (
 	"bytes"
 	"crypto/sha1"
 	"encoding/binary"
 	"encoding/hex"
-	"fmt"
 
 	"github.com/juju/errors"
+	"github.com/sirupsen/logrus"
 )
 
 // PacketMySQL defines mysql packet interface
@@ -91,7 +91,7 @@ func (p *PacketHandshake) Decode(data []byte) error {
 	if rptr+7 >= dl {
 		return errors.New("parse auth plungin data part 1 error")
 	}
-	p.AuthPluginDataPart = make([]byte, 0, 8+13)
+	p.AuthPluginDataPart = make([]byte, 8, 8+13)
 	copy(p.AuthPluginDataPart[:], data[rptr:rptr+8])
 	rptr += 8
 	// filter
@@ -104,14 +104,12 @@ func (p *PacketHandshake) Decode(data []byte) error {
 	if rptr+1 >= dl {
 		return errors.New("parse capability_flag_1 error")
 	}
-	var capabilityFlagsBytes [4]byte
-	capabilityFlagsBytes[0] = data[rptr]
-	capabilityFlagsBytes[1] = data[rptr+1]
+	p.CapabilityFlags = uint32(binary.LittleEndian.Uint16(data[rptr:]))
+	logrus.Debugf("low capability %v", p.CapabilityFlags)
 	rptr += 2
 	// character set
 	if rptr >= dl {
 		// No more data
-		p.CapabilityFlags = uint32(binary.LittleEndian.Uint16(capabilityFlagsBytes[2:]))
 		return nil
 	}
 	p.CharacterSet = data[rptr]
@@ -126,9 +124,7 @@ func (p *PacketHandshake) Decode(data []byte) error {
 	if rptr+1 >= dl {
 		return errors.New("parse capability_flag_2 error")
 	}
-	capabilityFlagsBytes[2] = data[rptr]
-	capabilityFlagsBytes[3] = data[rptr+1]
-	p.CapabilityFlags = binary.LittleEndian.Uint32(capabilityFlagsBytes[:])
+	p.CapabilityFlags = uint32(binary.LittleEndian.Uint16(data[rptr:]))<<16 | p.CapabilityFlags
 	rptr += 2
 	// auth plugin data len
 	authPluginDataLen := uint8(0)
@@ -161,7 +157,9 @@ func (p *PacketHandshake) Decode(data []byte) error {
 		if rptr+int(p2len)-1 >= dl {
 			return errors.New("parse auth plugin data 2 error")
 		}
-		p.AuthPluginDataPart = append(p.AuthPluginDataPart, data[rptr:rptr+int(p2len)]...)
+		// mysql-5.7/sql/auth/sql_authentication.cc line 538, the 13th byte is '\0',
+		// so it is a null terminated string.so we read the data as a null terminated string.
+		p.AuthPluginDataPart = append(p.AuthPluginDataPart, data[rptr:rptr+int(p2len)-1]...)
 		rptr += int(p2len)
 	}
 	// auth-plugin name
@@ -228,9 +226,10 @@ func (p *PacketHandshakeResponse) encodePass(key []byte) []byte {
 	if "" == p.Password {
 		return nil
 	}
+	passBytes := []byte(p.Password)
 
 	s1 := sha1.New()
-	s1.Write(key)
+	s1.Write(passBytes)
 	s1hash := s1.Sum(nil)
 
 	s1.Reset()
@@ -238,7 +237,7 @@ func (p *PacketHandshakeResponse) encodePass(key []byte) []byte {
 	shash := s1.Sum(nil)
 
 	s1.Reset()
-	s1.Write([]byte(p.Password))
+	s1.Write(key)
 	s1.Write(shash)
 	phash := s1.Sum(nil)
 
@@ -295,7 +294,7 @@ func (p *PacketHandshakeResponse) Encode() []byte {
 	copy(data[wptr:], []byte(MySQLNativePasswordPlugin))
 	wptr += len(MySQLNativePasswordPlugin)
 
-	fmt.Println(hex.EncodeToString(data))
+	logrus.Debugf(hex.EncodeToString(data))
 
 	return data
 }
@@ -313,7 +312,7 @@ type PacketOK struct {
 	EOF bool
 	// Result set
 	ColumnCount LenencInt
-	Results     []*ResultSet
+	Results     *ResultSet
 	// Parsing context
 	capabilityFlags uint32
 }
@@ -371,6 +370,10 @@ type PacketErr struct {
 	capabilityFlags uint32
 }
 
+func (p *PacketErr) toError() error {
+	return errors.New(p.ErrorMessage)
+}
+
 // Decode decodes binary data to mysql packet
 func (p *PacketErr) Decode(data []byte) error {
 	wptr := 0
@@ -396,16 +399,35 @@ func (p *PacketErr) Decode(data []byte) error {
 	return nil
 }
 
-// PacketComQuery is used to send the server a text-based query that is executed immediately
-type PacketComQuery struct {
+// PacketComStr is used to send the server a text-based query that is executed immediately
+type PacketComStr struct {
 	command string
 }
 
 // Encode encodes the packet to binary data
-func (p *PacketComQuery) Encode() ([]byte, error) {
+func (p *PacketComStr) Encode() ([]byte, error) {
 	buflen := len(p.command) + 1 + 4
 	data := make([]byte, buflen)
 	data[4] = comQuery
 	copy(data[5:], []byte(p.command))
 	return data, nil
+}
+
+// PacketEOF represents the eof of packets
+type PacketEOF struct {
+	warnings uint16
+	status   uint16
+}
+
+// Decode decodes binary data to mysql packet
+func (p *PacketEOF) Decode(data []byte) error {
+	if len(data) != 5 {
+		return ErrMalformPacket
+	}
+	if data[0] != packetHeaderEOF {
+		return errors.New("not a eof packet")
+	}
+	p.warnings = binary.LittleEndian.Uint16(data[1:])
+	p.status = binary.LittleEndian.Uint16(data[3:])
+	return nil
 }

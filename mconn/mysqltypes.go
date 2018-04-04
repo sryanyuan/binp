@@ -1,4 +1,4 @@
-package slave
+package mconn
 
 import (
 	"encoding/binary"
@@ -99,8 +99,8 @@ func (i *LenencInt) FromData(data []byte) int {
 	switch {
 	case flag < 0xfb:
 		{
-			i.Value = uint64(data[1])
-			parsed = 2
+			i.Value = uint64(data[0])
+			parsed = 1
 		}
 	case flag == 0xfc:
 		{
@@ -142,8 +142,7 @@ func (i *LenencInt) Set(v uint64) {
 	switch {
 	case v < 0xfb:
 		{
-			buf[0] = 0xfb
-			buf[1] = byte(v)
+			buf[0] = byte(v)
 		}
 	case v >= 0xfb && v < 1<<16:
 		{
