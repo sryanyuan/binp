@@ -31,7 +31,11 @@ const (
 	FieldTypeTimestamp2
 	FieldTypeDateTime2
 	FieldTypeTime2
-	FieldTypeNewDecimal
+)
+
+// FieldType is type of mysql field
+const (
+	FieldTypeNewDecimal = 0xf6 + iota
 	FieldTypeEnum
 	FieldTypeSet
 	FieldTypeTinyBlob

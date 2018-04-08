@@ -33,6 +33,10 @@ var (
 	ErrColumnOutOfRange = errors.New("Index out of column range")
 	// ErrInvalidConn returns when connection is invalid
 	ErrInvalidConn = errors.New("Invalid conn")
+	// ErrRowNotFree represents the connection has a query and not closed
+	ErrRowNotFree = errors.New("Query row not free")
+	// ErrWrongFieldType returns when get field data with wrong type
+	ErrWrongFieldType = errors.New("Wrong field type")
 )
 
 // ResultSet contains all column field
@@ -43,6 +47,7 @@ type ResultSet struct {
 	datas     []interface{}
 	binary    bool
 	parseTime bool
+	moreRows  bool
 }
 
 // Columns get the column count
@@ -61,12 +66,38 @@ func (s *ResultSet) GetAt(i int) (interface{}, error) {
 	return s.datas[i], nil
 }
 
-// Close close the result set
-func (s *ResultSet) Close() {
-	if s.conn == nil {
-		return
+// GetAtString get the value of index i as string
+func (s *ResultSet) GetAtString(i int) (string, error) {
+	data, err := s.GetAt(i)
+	if nil != err {
+		return "", errors.Trace(err)
 	}
+	switch s.columns[i].fieldType {
+	case FieldTypeVarChar, FieldTypeVarString, FieldTypeString:
+		{
+			return data.(string), nil
+		}
+	}
+
+	return "", ErrWrongFieldType
+}
+
+// Close close the result set
+func (s *ResultSet) Close() error {
+	if s.conn == nil {
+		return ErrInvalidConn
+	}
+	// Read the last eof packet
+	if _, err := s.conn.readUntilEOF(); nil != err {
+		return errors.Trace(err)
+	}
+	s.discardResults()
+
+	s.conn.qrow = nil
+	// All rows need to be skipped
 	s.conn = nil
+
+	return nil
 }
 
 // Next get the next row data
@@ -96,16 +127,21 @@ func (s *ResultSet) readRowText() error {
 			return errors.Trace(err)
 		}
 		if peof.status&statusMoreResultsExists != 0 {
-			// Discard more results
-			if err = s.conn.discardResults(); nil != err {
+			s.moreRows = true
+			// Multi-resultset is not support
+			// https://dev.mysql.com/doc/internals/en/multi-resultset.html
+			if err = s.discardResults(); nil != err {
 				return errors.Trace(err)
 			}
-			s.conn = nil
-			return io.EOF
 		}
+		// Already reach row eof
+		s.moreRows = false
+		s.Close()
+		return io.EOF
 	}
 	if rsp[0] == packetHeaderERR {
-		s.conn = nil
+		s.moreRows = false
+		s.Close()
 		var perr PacketErr
 		if err := perr.Decode(rsp); nil != err {
 			return errors.Trace(err)
@@ -151,12 +187,35 @@ func (s *ResultSet) readRowBinary() error {
 	return nil
 }
 
-func (c *Conn) discardResults() error {
-	status := statusMoreResultsExists
-	for status&statusMoreResultsExists != 0 {
-		data, err := c.ReadPacket()
+func (s *ResultSet) discardResults() error {
+	for s.moreRows {
+		data, err := s.conn.ReadPacket()
 		if nil != err {
 			return errors.Trace(err)
+		}
+
+		switch data[0] {
+		case packetHeaderOK:
+			{
+				_, err := s.conn.readPacketOK(data)
+				if nil != err {
+					return errors.Trace(err)
+				}
+				// No more rows
+				s.moreRows = false
+			}
+		case packetHeaderERR:
+			{
+				perr, err := s.conn.readPacketERR(data)
+				if nil != err {
+					return errors.Trace(err)
+				}
+				return errors.New(perr.ErrorMessage)
+			}
+		case packetHeaderLocalInFile:
+			{
+				return ErrMalformPacket
+			}
 		}
 		// Reading column count
 		var ln LenencInt
@@ -168,12 +227,16 @@ func (c *Conn) discardResults() error {
 			break
 		}
 		// Read columns
-		if status, err = c.readUntilEOF(); nil != err {
+		var status int
+		if status, err = s.conn.readUntilEOF(); nil != err {
 			return errors.Trace(err)
 		}
 		// Read row
-		if status, err = c.readUntilEOF(); nil != err {
+		if status, err = s.conn.readUntilEOF(); nil != err {
 			return errors.Trace(err)
+		}
+		if status&statusMoreResultsExists == 0 {
+			s.moreRows = false
 		}
 	}
 
@@ -228,6 +291,7 @@ func (c *Conn) readResultSet(data []byte, options *responseOptions) (*PacketOK, 
 	if err := c.readResultColumns(rs); nil != err {
 		return nil, errors.Trace(err)
 	}
+	c.qrow = rs
 	return &PacketOK{
 		Results: rs,
 	}, nil

@@ -11,6 +11,10 @@ func (c *Conn) Exec(command string, args ...interface{}) (*PacketOK, error) {
 }
 
 func (c *Conn) sendCommandStr(str string) error {
+	if c.qrow != nil {
+		// Query already exists, close first
+		return ErrRowNotFree
+	}
 	var pcq PacketComStr
 	pcq.command = str
 

@@ -49,7 +49,7 @@ type Conn struct {
 	seq        uint8
 	capability uint32
 	loc        *time.Location
-	rstatus    int // reading response status
+	qrow       *ResultSet
 	// TODO: support tls
 	tlsConfig *tls.Config
 }
@@ -182,7 +182,7 @@ func (c *Conn) readFullPacket(w io.Writer) error {
 	}
 	seq := header.GetSequence()
 	if seq != c.seq {
-		return errors.Errorf("connection sequence mismatch, conn = %v, packet = %v", c.seq, seq)
+		//return errors.Errorf("connection sequence mismatch, conn = %v, packet = %v", c.seq, seq)
 	}
 
 	// Once receive the packet, increase the connection's sequence

@@ -172,11 +172,26 @@ func (s *Slave) registerSlave() error {
 		}
 	}
 
-	ret, err := s.conn.Exec("SHOW GLOBAL VARIABLES LIKE 'BINLOG_CHECKSUM'")
+	rows, err := s.conn.Exec("SHOW GLOBAL VARIABLES LIKE 'BINLOG_CHECKSUM'")
 	if nil != err {
 		return errors.Trace(err)
 	}
-	_ = ret
+	if err = rows.Results.Next(); nil != err {
+		rows.Results.Close()
+		return errors.Trace(err)
+	}
+	rows.Results.Close()
+
+	var checkSumType string
+	if checkSumType, err = rows.Results.GetAtString(1); nil != err {
+		return errors.Trace(err)
+	}
+	if "" != checkSumType {
+		rows, err = s.conn.Exec("SET @master_binlog_checksum='NONE'")
+		if nil != err {
+			return errors.Trace(err)
+		}
+	}
 
 	return nil
 }
