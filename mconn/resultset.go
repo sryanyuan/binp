@@ -58,10 +58,10 @@ func (s *ResultSet) Columns() int {
 // GetAt get the value of index i
 func (s *ResultSet) GetAt(i int) (interface{}, error) {
 	if nil == s.datas {
-		return nil, ErrNoData
+		return "", ErrNoData
 	}
 	if i < 0 || i >= s.columnCnt {
-		return nil, ErrColumnOutOfRange
+		return "", ErrColumnOutOfRange
 	}
 	return s.datas[i], nil
 }
@@ -93,7 +93,6 @@ func (s *ResultSet) Close() error {
 	}
 	s.discardResults()
 
-	s.conn.qrow = nil
 	// All rows need to be skipped
 	s.conn = nil
 
@@ -136,12 +135,12 @@ func (s *ResultSet) readRowText() error {
 		}
 		// Already reach row eof
 		s.moreRows = false
-		s.Close()
+		s.conn = nil
 		return io.EOF
 	}
 	if rsp[0] == packetHeaderERR {
 		s.moreRows = false
-		s.Close()
+		s.conn = nil
 		var perr PacketErr
 		if err := perr.Decode(rsp); nil != err {
 			return errors.Trace(err)
@@ -291,7 +290,7 @@ func (c *Conn) readResultSet(data []byte, options *responseOptions) (*PacketOK, 
 	if err := c.readResultColumns(rs); nil != err {
 		return nil, errors.Trace(err)
 	}
-	c.qrow = rs
+
 	return &PacketOK{
 		Results: rs,
 	}, nil

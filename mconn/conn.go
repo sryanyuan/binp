@@ -49,7 +49,8 @@ type Conn struct {
 	seq        uint8
 	capability uint32
 	loc        *time.Location
-	qrow       *ResultSet
+	si         ServerInfo
+	cfg        *ReplicationConfig
 	// TODO: support tls
 	tlsConfig *tls.Config
 }
@@ -70,6 +71,11 @@ func (c *Conn) SetKeepalive(d time.Duration) bool {
 		return true
 	}
 	return false
+}
+
+// GetServerInfo get the server information by handshake
+func (c *Conn) GetServerInfo(si *ServerInfo) {
+	*si = c.si
 }
 
 func (c *Conn) setStatus(v int64) {

@@ -2,6 +2,7 @@ package slave
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,20 +33,6 @@ type MasterStatus struct {
 	Pos     Position `json:"position"`
 }
 
-// ReplicationConfig specify the master information
-type ReplicationConfig struct {
-	Host            string   `json:"host" toml:"host"`
-	Port            uint16   `json:"port" toml:"port"`
-	Username        string   `json:"username" toml:"username"`
-	Password        string   `json:"password" toml:"password"`
-	Charset         string   `json:"charset" toml:"charset"`
-	SlaveID         int64    `json:"slave-id" toml:"slave-id"`
-	Pos             Position `json:"position" toml:"position"`
-	EnableGtid      bool     `json:"enable-gtid" toml:"enable-gtid"`
-	EventBufferSize int      `json:"event-buffer-size" toml:"event-buffer-size"`
-	KeepAlivePeriod int      `json:"keepalive-period" toml:"keepalive-period"`
-}
-
 // Slave represents a slave node like a mysql slave to participate the mysql replication
 type Slave struct {
 	cancelCtx  context.Context
@@ -57,7 +44,8 @@ type Slave struct {
 	currentPos Position
 	eq         *eventQueue
 	conn       *mconn.Conn
-	mstatus    mconn.ServerInfo
+	si         mconn.ServerInfo
+	mariaDB    bool
 }
 
 // NewSlave creates a new slave
@@ -158,8 +146,14 @@ func (s *Slave) registerSlave() error {
 	if nil != err {
 		return errors.Trace(err)
 	}
+	s.conn.GetServerInfo(&s.si)
 	log.Infof("Connect to mysql %v:%v success", s.config.Host, s.config.Port)
-	log.Infof("Master status: %v", s.mstatus)
+	log.Infof("Master status: %v", s.si)
+
+	// Is mariadb ?
+	if strings.Contains(strings.ToUpper(s.si.ServerVersion), "MARIADB") {
+		s.mariaDB = true
+	}
 
 	// Set keepalive period
 	if s.config.KeepAlivePeriod != 0 {
@@ -187,8 +181,16 @@ func (s *Slave) registerSlave() error {
 		return errors.Trace(err)
 	}
 	if "" != checkSumType {
-		rows, err = s.conn.Exec("SET @master_binlog_checksum='NONE'")
+		_, err = s.conn.Exec("SET @master_binlog_checksum='NONE'")
 		if nil != err {
+			return errors.Trace(err)
+		}
+	}
+
+	// If is mariadb, enable gtid
+	// https://github.com/alibaba/canal/wiki/BinlogChange(MariaDB5&10)
+	if s.mariaDB {
+		if _, err = s.conn.Exec("SET @mariadb_slave_capability=4"); nil != err {
 			return errors.Trace(err)
 		}
 	}

@@ -60,6 +60,10 @@ func (c *Conn) handshake(username, password, database string) error {
 		}
 	}
 
+	// Update server info
+	c.si.ProtoVersion = handshake.ProtocolVersion
+	c.si.ServerVersion = handshake.ServerVersion
+
 	return nil
 }
 

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"encoding/binary"
-	"encoding/hex"
 
 	"github.com/juju/errors"
 	"github.com/sirupsen/logrus"
@@ -294,8 +293,6 @@ func (p *PacketHandshakeResponse) Encode() []byte {
 	copy(data[wptr:], []byte(MySQLNativePasswordPlugin))
 	wptr += len(MySQLNativePasswordPlugin)
 
-	logrus.Debugf(hex.EncodeToString(data))
-
 	return data
 }
 
@@ -430,4 +427,72 @@ func (p *PacketEOF) Decode(data []byte) error {
 	p.warnings = binary.LittleEndian.Uint16(data[1:])
 	p.status = binary.LittleEndian.Uint16(data[3:])
 	return nil
+}
+
+// PacketRegisterSlave register slave to master
+// https://dev.mysql.com/doc/internals/en/com-register-slave.html
+type PacketRegisterSlave struct {
+	ServerID uint32
+	Hostname string
+	User     string
+	Password string
+	Port     uint16
+	Rank     uint32
+	MasterID uint32
+}
+
+// Encode encodes the packet to binary data
+func (p *PacketRegisterSlave) Encode() ([]byte, error) {
+	l := 4 + 1 + len(p.Hostname) + 1 + len(p.User) + 1 + len(p.Password) + 2 + 4 + 4
+	data := make([]byte, l)
+	wptr := 0
+	data[wptr] = comRegisterSlave
+	wptr++
+
+	// the slaves server-id
+	binary.LittleEndian.PutUint32(data[wptr:], p.ServerID)
+	wptr += 4
+
+	// see --report-host, usually empty
+	wptr += writeLengthPrefixString(data[wptr:], p.Hostname)
+	// see --report-user, usually empty
+	wptr += writeLengthPrefixString(data[wptr:], p.User)
+	// see --report-password, usually empty
+	wptr += writeLengthPrefixString(data[wptr:], p.Password)
+	// see --report-port, usually empty
+	binary.LittleEndian.PutUint16(data[wptr:], p.Port)
+	wptr += 2
+	// ignored
+	binary.LittleEndian.PutUint32(data[wptr:], p.Rank)
+	wptr += 4
+	// usually 0. Appears as "master id" in SHOW SLAVE HOSTS on the master. Unknown what else it impacts
+	binary.LittleEndian.PutUint32(data[wptr:], p.MasterID)
+
+	return data, nil
+}
+
+// PacketBinlogDump to enable replication
+type PacketBinlogDump struct {
+	BinlogPos  uint32
+	Flags      uint16
+	ServerID   uint32
+	BinlogFile string
+}
+
+// Encode encodes the packet to binary data
+func (p *PacketBinlogDump) Encode() ([]byte, error) {
+	l := 4 + 1 + 4 + 2 + 4 + len(p.BinlogFile)
+	data := make([]byte, l)
+
+	wptr := 4
+	binary.LittleEndian.PutUint32(data[wptr:], p.BinlogPos)
+	wptr += 4
+	binary.LittleEndian.PutUint16(data[wptr:], p.Flags)
+	wptr += 2
+	binary.LittleEndian.PutUint32(data[wptr:], p.ServerID)
+	wptr += 4
+	if len(p.BinlogFile) > 0 {
+		copy(data[wptr:], p.BinlogFile)
+	}
+	return data, nil
 }

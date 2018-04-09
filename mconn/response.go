@@ -57,5 +57,31 @@ func (c *Conn) readPacketERR(data []byte) (*PacketErr, error) {
 }
 
 func (c *Conn) readOK() (*PacketOK, error) {
-	return nil, nil
+	rspData, err := c.ReadPacket()
+	if nil != err {
+		return nil, errors.Trace(err)
+	}
+
+	switch rspData[0] {
+	case packetHeaderOK:
+		{
+			pok, err := c.readPacketOK(rspData)
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			return pok, nil
+		}
+	case packetHeaderERR:
+		{
+			perr, err := c.readPacketERR(rspData)
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			return nil, errors.New(perr.ErrorMessage)
+		}
+	default:
+		{
+			return nil, ErrMalformPacket
+		}
+	}
 }

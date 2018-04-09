@@ -34,6 +34,10 @@ const (
 const (
 	// https://dev.mysql.com/doc/internals/en/com-query.html
 	comQuery = 0x03
+	// https://dev.mysql.com/doc/internals/en/com-register-slave.html
+	comRegisterSlave = 0x15
+	// https://dev.mysql.com/doc/internals/en/com-binlog-dump.html
+	comBinlogDump = 0x12
 )
 
 // Charset SELECT id, collation_name FROM information_schema.collations ORDER BY id;
