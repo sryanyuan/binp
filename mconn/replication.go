@@ -67,12 +67,17 @@ func (c *Conn) sendRegistgerSlaveCommand() error {
 
 // StartDumpBinlog start dump binlog from master
 func (c *Conn) StartDumpBinlog(pos Position) error {
+	var err error
+
 	if c.cfg.EnableGtid {
 		return errors.New("Gtid replication not support now")
+	} else {
+		if err = c.sendBinlogDumpCommand(pos); nil != err {
+			return errors.Trace(err)
+		}
 	}
-	if err := c.sendBinlogDumpCommand(pos); nil != err {
-		return errors.Trace(err)
-	}
+
+	return nil
 }
 
 func (c *Conn) sendBinlogDumpCommand(pos Position) error {

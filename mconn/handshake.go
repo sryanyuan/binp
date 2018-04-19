@@ -43,14 +43,14 @@ func (c *Conn) handshake(username, password, database string) error {
 		return errors.Trace(err)
 	}
 	switch data[0] {
-	case packetHeaderOK:
+	case PacketHeaderOK:
 		{
 			if _, err = c.readPacketOK(data); nil != err {
 				return errors.Trace(err)
 			}
 			// Handshake done
 		}
-	case packetHeaderERR:
+	case PacketHeaderERR:
 		{
 			perr, err := c.readPacketERR(data)
 			if nil != err {

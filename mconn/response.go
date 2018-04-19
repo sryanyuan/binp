@@ -12,7 +12,7 @@ func (c *Conn) readResponse(options *responseOptions) (*PacketOK, error) {
 	}
 
 	switch rspData[0] {
-	case packetHeaderOK:
+	case PacketHeaderOK:
 		{
 			pok, err := c.readPacketOK(rspData)
 			if nil != err {
@@ -20,7 +20,7 @@ func (c *Conn) readResponse(options *responseOptions) (*PacketOK, error) {
 			}
 			return pok, nil
 		}
-	case packetHeaderERR:
+	case PacketHeaderERR:
 		{
 			perr, err := c.readPacketERR(rspData)
 			if nil != err {
@@ -28,7 +28,7 @@ func (c *Conn) readResponse(options *responseOptions) (*PacketOK, error) {
 			}
 			return nil, errors.New(perr.ErrorMessage)
 		}
-	case packetHeaderLocalInFile:
+	case PacketHeaderLocalInFile:
 		{
 			return nil, ErrMalformPacket
 		}
@@ -63,7 +63,7 @@ func (c *Conn) readOK() (*PacketOK, error) {
 	}
 
 	switch rspData[0] {
-	case packetHeaderOK:
+	case PacketHeaderOK:
 		{
 			pok, err := c.readPacketOK(rspData)
 			if nil != err {
@@ -71,7 +71,7 @@ func (c *Conn) readOK() (*PacketOK, error) {
 			}
 			return pok, nil
 		}
-	case packetHeaderERR:
+	case PacketHeaderERR:
 		{
 			perr, err := c.readPacketERR(rspData)
 			if nil != err {

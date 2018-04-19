@@ -14,3 +14,11 @@ func writeLengthPrefixString(buf []byte, v string) int {
 
 	return 1 + len(v)
 }
+
+func numberFromBufferLittleEndian(buf []byte) uint64 {
+	v := uint64(0)
+	for i, b := range buf {
+		v |= (uint64(b) << uint(i) * 8)
+	}
+	return v
+}

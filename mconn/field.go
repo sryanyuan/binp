@@ -17,6 +17,7 @@ const (
 	FieldTypeShort
 	FieldTypeLong
 	FieldTypeFloat
+	FieldTypeDouble
 	FieldTypeNull
 	FieldTypeTimestamp
 	FieldTypeLongLong
@@ -35,7 +36,8 @@ const (
 
 // FieldType is type of mysql field
 const (
-	FieldTypeNewDecimal = 0xf6 + iota
+	FieldTypeJSON = 0xf5 + iota
+	FieldTypeNewDecimal
 	FieldTypeEnum
 	FieldTypeSet
 	FieldTypeTinyBlob

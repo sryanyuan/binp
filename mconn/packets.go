@@ -315,7 +315,7 @@ type PacketOK struct {
 }
 
 func (p *PacketOK) isOK() bool {
-	return p.Header == packetHeaderOK
+	return p.Header == PacketHeaderOK
 }
 
 // Decode decodes binary data to mysql packet
@@ -325,7 +325,7 @@ func (p *PacketOK) Decode(data []byte) error {
 	wptr++
 
 	// Check the ok packet is a eof packet
-	if p.Header == packetHeaderEOF && len(data) < 9 {
+	if p.Header == PacketHeaderEOF && len(data) < 9 {
 		p.EOF = true
 		return nil
 	}
@@ -377,7 +377,7 @@ func (p *PacketErr) Decode(data []byte) error {
 	p.Header = data[wptr]
 	wptr++
 
-	if p.Header != packetHeaderERR {
+	if p.Header != PacketHeaderERR {
 		return errors.Errorf("Not a packet err, header = %v", p.Header)
 	}
 
@@ -421,7 +421,7 @@ func (p *PacketEOF) Decode(data []byte) error {
 	if len(data) != 5 {
 		return ErrMalformPacket
 	}
-	if data[0] != packetHeaderEOF {
+	if data[0] != PacketHeaderEOF {
 		return errors.New("not a eof packet")
 	}
 	p.warnings = binary.LittleEndian.Uint16(data[1:])
@@ -443,9 +443,9 @@ type PacketRegisterSlave struct {
 
 // Encode encodes the packet to binary data
 func (p *PacketRegisterSlave) Encode() ([]byte, error) {
-	l := 4 + 1 + len(p.Hostname) + 1 + len(p.User) + 1 + len(p.Password) + 2 + 4 + 4
+	l := 4 + 1 + 4 + 1 + len(p.Hostname) + 1 + len(p.User) + 1 + len(p.Password) + 2 + 4 + 4
 	data := make([]byte, l)
-	wptr := 0
+	wptr := 4
 	data[wptr] = comRegisterSlave
 	wptr++
 
@@ -485,6 +485,8 @@ func (p *PacketBinlogDump) Encode() ([]byte, error) {
 	data := make([]byte, l)
 
 	wptr := 4
+	data[wptr] = comBinlogDump
+	wptr++
 	binary.LittleEndian.PutUint32(data[wptr:], p.BinlogPos)
 	wptr += 4
 	binary.LittleEndian.PutUint16(data[wptr:], p.Flags)

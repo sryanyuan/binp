@@ -73,7 +73,7 @@ func (s *ResultSet) GetAtString(i int) (string, error) {
 		return "", errors.Trace(err)
 	}
 	switch s.columns[i].fieldType {
-	case FieldTypeVarChar, FieldTypeVarString, FieldTypeString:
+	case FieldTypeVarChar, FieldTypeVarString, FieldTypeString, FieldTypeMediumBlob:
 		{
 			return data.(string), nil
 		}
@@ -120,7 +120,7 @@ func (s *ResultSet) readRowText() error {
 	}
 
 	// Got eof?
-	if rsp[0] == packetHeaderEOF && len(rsp) == 5 {
+	if rsp[0] == PacketHeaderEOF && len(rsp) == 5 {
 		var peof PacketEOF
 		if err = peof.Decode(rsp); nil != err {
 			return errors.Trace(err)
@@ -138,7 +138,7 @@ func (s *ResultSet) readRowText() error {
 		s.conn = nil
 		return io.EOF
 	}
-	if rsp[0] == packetHeaderERR {
+	if rsp[0] == PacketHeaderERR {
 		s.moreRows = false
 		s.conn = nil
 		var perr PacketErr
@@ -194,7 +194,7 @@ func (s *ResultSet) discardResults() error {
 		}
 
 		switch data[0] {
-		case packetHeaderOK:
+		case PacketHeaderOK:
 			{
 				_, err := s.conn.readPacketOK(data)
 				if nil != err {
@@ -203,7 +203,7 @@ func (s *ResultSet) discardResults() error {
 				// No more rows
 				s.moreRows = false
 			}
-		case packetHeaderERR:
+		case PacketHeaderERR:
 			{
 				perr, err := s.conn.readPacketERR(data)
 				if nil != err {
@@ -211,7 +211,7 @@ func (s *ResultSet) discardResults() error {
 				}
 				return errors.New(perr.ErrorMessage)
 			}
-		case packetHeaderLocalInFile:
+		case PacketHeaderLocalInFile:
 			{
 				return ErrMalformPacket
 			}
@@ -250,14 +250,14 @@ func (c *Conn) readUntilEOF() (int, error) {
 		if err != nil {
 			return 0, errors.Trace(err)
 		}
-		if data[0] == packetHeaderERR {
+		if data[0] == PacketHeaderERR {
 			var perr PacketErr
 			if err = perr.Decode(data); nil != err {
 				return 0, errors.Trace(err)
 			}
 			return 0, errors.Trace(perr.toError())
 		}
-		if data[0] == packetHeaderEOF {
+		if data[0] == PacketHeaderEOF {
 			if len(data) != 5 {
 				return 0, errors.Trace(ErrMalformPacket)
 			}
@@ -305,7 +305,7 @@ func (c *Conn) readResultColumns(rs *ResultSet) error {
 			return errors.Trace(err)
 		}
 
-		if rsp[0] == packetHeaderEOF && len(rsp) == 5 {
+		if rsp[0] == PacketHeaderEOF && len(rsp) == 5 {
 			// https://dev.mysql.com/doc/internals/en/packet-EOF_Packet.html
 			// We just support protocol 41, so the eof packet is always 5 bytes length
 			if len(rs.columns) == rs.columnCnt {

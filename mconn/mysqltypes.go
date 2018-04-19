@@ -24,10 +24,10 @@ const (
 )
 
 const (
-	packetHeaderOK          = 0x00
-	packetHeaderEOF         = 0xfe
-	packetHeaderLocalInFile = 0xfb
-	packetHeaderERR         = 0xff
+	PacketHeaderOK          = 0x00
+	PacketHeaderEOF         = 0xfe
+	PacketHeaderLocalInFile = 0xfb
+	PacketHeaderERR         = 0xff
 )
 
 //
