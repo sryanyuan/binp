@@ -31,6 +31,9 @@ func (d *SyncDesc) Validate() error {
 }
 
 // ISyncRule defines a rule which database and table can be synchronized
+// Sync rule must be thread safe, it will be used in binlog parse thread
+// and user worker threads. So NewRule must not be invoked once the worker
+// is running
 type ISyncRule interface {
 	// schema and table, returns rewrite schema and table name
 	CanSyncTable(string, string) (string, string, bool)

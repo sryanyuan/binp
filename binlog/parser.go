@@ -176,6 +176,7 @@ func (p *Parser) parsePayload(event *Event, data []byte) error {
 		}
 	case TableMapEventType:
 		{
+			// TODO: Get table map event from here and skip events filtered by sync rule
 			evt := &TableMapEvent{}
 			// Check the post header len from format description
 			if nil == p.format {
