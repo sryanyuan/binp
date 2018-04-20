@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -9,9 +10,15 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/sryanyuan/binp/mconn"
 	"github.com/sryanyuan/binp/slave"
+
+	_ "net/http/pprof"
 )
 
 func main() {
+	// Debug pprof
+	if os.Getenv("HTTP_PPROF") != "" {
+		go http.ListenAndServe(os.Getenv("HTTP_PPROF"), nil)
+	}
 	var err error
 	var config AppConfig
 	config.Log.Level = "debug"
@@ -26,6 +33,7 @@ func main() {
 		Port:     3310,
 		Username: "root",
 		Password: "password",
+		SlaveID:  24,
 	})
 	if err = slv.Start(mconn.Position{}); nil != err {
 		logrus.Error(errors.Details(err))

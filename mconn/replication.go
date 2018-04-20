@@ -71,10 +71,10 @@ func (c *Conn) StartDumpBinlog(pos Position) error {
 
 	if c.cfg.EnableGtid {
 		return errors.New("Gtid replication not support now")
-	} else {
-		if err = c.sendBinlogDumpCommand(pos); nil != err {
-			return errors.Trace(err)
-		}
+	}
+
+	if err = c.sendBinlogDumpCommand(pos); nil != err {
+		return errors.Trace(err)
 	}
 
 	return nil

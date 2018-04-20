@@ -2,7 +2,7 @@ package binlog
 
 import (
 	"github.com/juju/errors"
-	"github.com/sryanyuan/binp/mconn"
+	"github.com/sryanyuan/binp/utils"
 )
 
 // XidEvent sees below
@@ -14,7 +14,7 @@ type XidEvent struct {
 // Decode decodes the binary data into payload
 func (e *XidEvent) Decode(data []byte) error {
 	var err error
-	r := mconn.NewBinReader(data)
+	r := utils.NewBinReader(data)
 
 	e.Xid, err = r.ReadUint64()
 	if nil != err {

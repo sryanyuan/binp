@@ -1,9 +1,8 @@
 package binlog
 
 import (
-	"github.com/sryanyuan/binp/mconn"
-
 	"github.com/juju/errors"
+	"github.com/sryanyuan/binp/utils"
 )
 
 // RotateEvent see below
@@ -15,7 +14,7 @@ type RotateEvent struct {
 
 // Decode decodes the binary data into payload
 func (e *RotateEvent) Decode(data []byte) error {
-	r := mconn.NewBinReader(data)
+	r := utils.NewBinReader(data)
 	var err error
 
 	e.Position, err = r.ReadUint64()

@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 
 	"github.com/juju/errors"
+	"github.com/sirupsen/logrus"
 )
 
 // Parser parse the binlog event
@@ -53,7 +54,19 @@ func (p *Parser) Parse(data []byte) (*Event, error) {
 			{
 				p.tables[event.Payload.TableMap.TableID] = event.Payload.TableMap
 			}
+		case WriteRowsEventV0Type, WriteRowsEventV1Type, WriteRowsEventV2Type,
+			UpdateRowsEventV0Type, UpdateRowsEventV1Type, UpdateRowsEventV2Type,
+			DeleteRowsEventV0Type, DeleteRowsEventV1Type, DeleteRowsEventV2Type:
+			{
+				if event.Payload.Rows.Flags&RowsEventFlagStmtEnd != 0 {
+					//  If the table id is 0x00ffffff it is a dummy event that should have the end of statement flag set that
+					// declares that all table maps can be freed. Otherwise it refers to a table defined by TABLE_MAP_EVENT.
+					p.tables = make(map[uint64]*TableMapEvent)
+				}
+			}
 		}
+	} else {
+		logrus.Debugf("Unparsed binlog event %d", event.Header.EventType)
 	}
 
 	return event, errors.Trace(err)
@@ -187,6 +200,7 @@ func (p *Parser) parsePayload(event *Event, data []byte) error {
 		DeleteRowsEventV0Type, DeleteRowsEventV1Type, DeleteRowsEventV2Type:
 		{
 			evt := &RowsEvent{}
+			evt.tables = p.tables
 			// Check the post header len from format description
 			if nil == p.format {
 				return errors.New("missing format description")
@@ -224,6 +238,27 @@ func (p *Parser) parsePayload(event *Event, data []byte) error {
 
 			event.Payload.Parsed = true
 			event.Payload.Rows = evt
+			payload = evt
+		}
+	case RowsQueryEventType:
+		{
+			evt := &RowsQueryEvent{}
+			event.Payload.Parsed = true
+			event.Payload.RowsQuery = evt
+			payload = evt
+		}
+	case GTIDEventType:
+		{
+			evt := &GTIDEvent{}
+			event.Payload.Parsed = true
+			event.Payload.GTID = evt
+			payload = evt
+		}
+	case MariadbGTIDEventType:
+		{
+			evt := &MariadbGTIDEvent{}
+			event.Payload.Parsed = true
+			event.Payload.MariadbGTID = evt
 			payload = evt
 		}
 	}

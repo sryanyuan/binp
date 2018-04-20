@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sryanyuan/binp/binlog"
@@ -12,9 +13,7 @@ import (
 	"github.com/sryanyuan/binp/mconn"
 
 	"github.com/juju/errors"
-	"github.com/ngaut/log"
 	"github.com/sirupsen/logrus"
-	"github.com/sryanyuan/binp/anumber"
 )
 
 const (
@@ -46,11 +45,11 @@ type Slave struct {
 	wg         sync.WaitGroup
 	mu         sync.Mutex
 	config     *mconn.ReplicationConfig
-	status     anumber.AtomicInt64
+	status     int64
 	currentPos mconn.Position
 	eq         *eventQueue
 	conn       *mconn.Conn
-	si         mconn.ServerInfo
+	si         mconn.HandshakeInfo
 	mariaDB    bool
 	parser     *binlog.Parser
 }
@@ -76,7 +75,7 @@ func (s *Slave) Start(pos mconn.Position) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.status.Get() != slaveStatusNone {
+	if atomic.LoadInt64(&s.status) != slaveStatusNone {
 		return errors.New("slave already working")
 	}
 
@@ -87,7 +86,7 @@ func (s *Slave) Start(pos mconn.Position) error {
 	if nil != err {
 		return errors.Trace(err)
 	}
-	s.status.Set(slaveStatusRunning)
+	atomic.StoreInt64(&s.status, slaveStatusRunning)
 
 	s.wg.Add(1)
 	go s.pumpBinlog()
@@ -100,10 +99,10 @@ func (s *Slave) Stop() {
 	s.mu.Lock()
 	s.mu.Unlock()
 
-	if s.status.Get() != slaveStatusRunning {
+	if atomic.LoadInt64(&s.status) != slaveStatusRunning {
 		return
 	}
-	s.status.Set(slaveStatusExited)
+	atomic.StoreInt64(&s.status, slaveStatusExited)
 	s.cancelFn()
 	// Close the connection
 	s.conn.Close()
@@ -112,7 +111,7 @@ func (s *Slave) Stop() {
 
 // Next gets the binlog event until a binlog comes or context timeout
 func (s *Slave) Next(ctx context.Context) (*binlog.Event, error) {
-	if s.status.Get() != slaveStatusRunning {
+	if atomic.LoadInt64(&s.status) != slaveStatusRunning {
 		return nil, errors.New("slave not running")
 	}
 
@@ -231,9 +230,9 @@ func (s *Slave) registerSlave() error {
 	if nil != err {
 		return errors.Trace(err)
 	}
-	s.conn.GetServerInfo(&s.si)
-	log.Infof("Connect to mysql %v:%v success", s.config.Host, s.config.Port)
-	log.Infof("Master status: %v", s.si)
+	s.conn.GetHandshakeInfo(&s.si)
+	logrus.Infof("Connect to mysql %v:%v success", s.config.Host, s.config.Port)
+	logrus.Infof("Master status: %v", &s.si)
 
 	// Is mariadb ?
 	if strings.Contains(strings.ToUpper(s.si.ServerVersion), "MARIADB") {
@@ -307,6 +306,10 @@ func (s *Slave) pumpBinlog() {
 				s.pushQueueError(err)
 				return
 			}
+			// If retry success
+			logrus.Infof("Retry sync at position %s:%d(%s) success",
+				s.currentPos.Filename, s.currentPos.Offset, s.currentPos.Gtid)
+			continue
 		}
 
 		// Read binlog event

@@ -1,12 +1,11 @@
 package mconn
 
 import (
-	"bytes"
 	"crypto/sha1"
 	"encoding/binary"
 
 	"github.com/juju/errors"
-	"github.com/sirupsen/logrus"
+	"github.com/sryanyuan/binp/utils"
 )
 
 // PacketMySQL defines mysql packet interface
@@ -59,12 +58,125 @@ type PacketHandshake struct {
 	CapabilityFlags    uint32
 	CharacterSet       uint8
 	StatusFlags        uint16
-	AUthPluginName     string
+	AuthPluginName     string
 }
 
 // Decode read binary data into handshake packet
 // https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::Handshake
 func (p *PacketHandshake) Decode(data []byte) error {
+	var err error
+	r := utils.NewBinReader(data)
+
+	// Protocol version
+	p.ProtocolVersion, err = r.ReadUint8()
+	if nil != err {
+		return errors.Trace(err)
+	}
+	// Server version
+	p.ServerVersion, err = r.ReadStringUntilTerm()
+	if nil != err {
+		return errors.Trace(err)
+	}
+	// Connection id
+	p.ConnectionID, err = r.ReadUint32()
+	if nil != err {
+		return errors.Trace(err)
+	}
+	// Auth plugin data part 1
+	p.AuthPluginDataPart = make([]byte, 8, 8+13)
+	authPluginDataPart, err := r.ReadBytes(8)
+	if nil != err {
+		return errors.Trace(err)
+	}
+	copy(p.AuthPluginDataPart[:], authPluginDataPart)
+	// Filter
+	p.Filter, err = r.ReadUint8()
+	if nil != err {
+		return errors.Trace(err)
+	}
+	// capability_flag_1 lower bytes
+	cp, err := r.ReadUint16()
+	if nil != err {
+		return errors.Trace(err)
+	}
+	p.CapabilityFlags = uint32(cp)
+	// character set
+	p.CharacterSet, err = r.ReadUint8()
+	if nil != err {
+		return errors.Trace(err)
+	}
+	// status flags
+	p.StatusFlags, err = r.ReadUint16()
+	if nil != err {
+		return errors.Trace(err)
+	}
+	// capability flags 2 upper bytes
+	cp, err = r.ReadUint16()
+	if nil != err {
+		return errors.Trace(err)
+	}
+	p.CapabilityFlags = uint32(cp)<<16 | p.CapabilityFlags
+	// auth plugin data len
+	authPluginDataLen := uint8(0)
+	if (p.CapabilityFlags & clientPluginAuth) != 0 {
+		authPluginDataLen, err = r.ReadUint8()
+		if nil != err {
+			return errors.Trace(err)
+		}
+	} /*else {
+		// Always byte 0
+		if rptr >= dl {
+			return errors.New("parse auth plugin data len error")
+		}
+		authPluginDataLen = data[rptr]
+		rptr++
+	}*/
+	// Reserved string(10)
+	_, err = r.ReadBytes(10)
+	if nil != err {
+		return errors.Trace(err)
+	}
+	// auth plugin data part2
+	if (p.CapabilityFlags & clientSecureConnection) != 0 {
+		// auth plugin data part2 length is mutable. $len=MAX(13, length of auth-plugin-data - 8)
+		p2len := authPluginDataLen - 8
+		if p2len > 13 {
+			p2len = 13
+		}
+		// mysql-5.7/sql/auth/sql_authentication.cc line 538, the 13th byte is '\0',
+		// so it is a null terminated string.so we read the data as a null terminated string.
+		authPluginDataPart, err = r.ReadBytes(int(p2len) - 1)
+		if nil != err {
+			return errors.Trace(err)
+		}
+		p.AuthPluginDataPart = append(p.AuthPluginDataPart, authPluginDataPart...)
+		// Skip the next '\0' byte
+		_, err = r.ReadUint8()
+		if nil != err {
+			return errors.Trace(err)
+		}
+	}
+	// auth-plugin name
+	if (p.CapabilityFlags & clientPluginAuth) != 0 {
+		// String eof
+		p.AuthPluginName, err = r.ReadStringUntilTerm()
+		if nil != err {
+			return errors.Trace(err)
+		}
+	}
+	// Check to the terminal
+	if !r.Empty() {
+		return errors.New("not eof")
+	}
+	r.End()
+
+	return nil
+}
+
+/* Deprecated version of decode
+// Decode read binary data into handshake packet
+// https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::Handshake
+func (p *PacketHandshake) Decode_(data []byte) error {
 	dl := len(data)
 	// protocol version
 	if dl < 1 {
@@ -133,14 +245,7 @@ func (p *PacketHandshake) Decode(data []byte) error {
 		}
 		authPluginDataLen = data[rptr]
 		rptr++
-	} /*else {
-		// Always byte 0
-		if rptr >= dl {
-			return errors.New("parse auth plugin data len error")
-		}
-		authPluginDataLen = data[rptr]
-		rptr++
-	}*/
+	}
 	// Reserved string(10)
 	if rptr+9 >= dl {
 		return errors.New("parse reserved error")
@@ -177,7 +282,7 @@ func (p *PacketHandshake) Decode(data []byte) error {
 	}
 
 	return nil
-}
+}*/
 
 // PacketHandshakeResponse responses the handshake packet to server
 // https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::HandshakeResponse
@@ -301,8 +406,8 @@ func (p *PacketHandshakeResponse) Encode() []byte {
 type PacketOK struct {
 	Header uint8
 	// OK packet fields
-	AffectedRows LenencInt
-	LastInsertID LenencInt
+	AffectedRows uint64
+	LastInsertID uint64
 	StatusFlags  uint16 // StatusFlags has value : client protocol 41 or client transactions
 	Warnings     uint16
 	// EOF
@@ -318,6 +423,52 @@ func (p *PacketOK) isOK() bool {
 	return p.Header == PacketHeaderOK
 }
 
+// Decode decodes binary data to mysql packet
+func (p *PacketOK) Decode(data []byte) error {
+	var err error
+	r := utils.NewBinReader(data)
+
+	// Check the ok packet is a eof packet
+	if p.Header == PacketHeaderEOF && len(data) < 9 {
+		p.EOF = true
+		return nil
+	}
+
+	p.AffectedRows, err = r.ReadLenencInt()
+	if nil != err {
+		return errors.Trace(err)
+	}
+	p.LastInsertID, err = r.ReadLenencInt()
+	if nil != err {
+		return errors.Trace(err)
+	}
+
+	if (p.capabilityFlags & clientProtocol41) != 0 {
+		p.StatusFlags, err = r.ReadUint16()
+		if nil != err {
+			return errors.Trace(err)
+		}
+		// Reading the next status message
+		p.Warnings = 0
+	} else if (p.capabilityFlags & clientTransactions) != 0 {
+		p.StatusFlags, err = r.ReadUint16()
+		if nil != err {
+			return errors.Trace(err)
+		}
+	}
+
+	// If has not ClientSessionTrace, left part is the warning message
+	if 0 == (clientSessionTrace & p.capabilityFlags) {
+
+	}
+
+	// TODO: parsing the left fields
+
+	r.End()
+	return nil
+}
+
+/* Deprecated version of decode
 // Decode decodes binary data to mysql packet
 func (p *PacketOK) Decode(data []byte) error {
 	wptr := 0
@@ -353,7 +504,7 @@ func (p *PacketOK) Decode(data []byte) error {
 	// TODO: parsing the left fields
 
 	return nil
-}
+}*/
 
 // PacketErr parses mysql OK_Packet
 // https://dev.mysql.com/doc/internals/en/packet-ERR_Packet.html
@@ -371,6 +522,42 @@ func (p *PacketErr) toError() error {
 	return errors.New(p.ErrorMessage)
 }
 
+// Decode decodes binary data to mysql packet
+func (p *PacketErr) Decode(data []byte) error {
+	var err error
+	r := utils.NewBinReader(data)
+
+	if p.Header != PacketHeaderERR {
+		return errors.Errorf("Not a packet err, header = %v", p.Header)
+	}
+
+	p.ErrorCode, err = r.ReadUint16()
+	if nil != err {
+		return errors.Trace(err)
+	}
+
+	if 0 != (p.capabilityFlags & clientProtocol41) {
+		// Skip marker of the sql state
+		_, err = r.ReadUint8()
+		if nil != err {
+			return errors.Trace(err)
+		}
+		p.State, err = r.ReadStringWithLen(5)
+		if nil != err {
+			return errors.Trace(err)
+		}
+	}
+	// Reading the error message until eof
+	p.ErrorMessage, err = r.ReadEOFString()
+	if nil != err {
+		return errors.Trace(err)
+	}
+	r.End()
+
+	return nil
+}
+
+/* Deprecated version of decode
 // Decode decodes binary data to mysql packet
 func (p *PacketErr) Decode(data []byte) error {
 	wptr := 0
@@ -394,7 +581,7 @@ func (p *PacketErr) Decode(data []byte) error {
 	p.ErrorMessage = string(data[wptr:])
 
 	return nil
-}
+}*/
 
 // PacketComStr is used to send the server a text-based query that is executed immediately
 type PacketComStr struct {

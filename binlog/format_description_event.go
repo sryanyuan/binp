@@ -2,7 +2,7 @@ package binlog
 
 import (
 	"github.com/juju/errors"
-	"github.com/sryanyuan/binp/mconn"
+	"github.com/sryanyuan/binp/utils"
 )
 
 const (
@@ -22,7 +22,7 @@ type FormatDescriptionEvent struct {
 // Decode decodes the binary data into payload
 func (e *FormatDescriptionEvent) Decode(data []byte) error {
 	var err error
-	r := mconn.NewBinReader(data)
+	r := utils.NewBinReader(data)
 
 	e.BinlogVersion, err = r.ReadUint16()
 	if nil != err {
@@ -44,6 +44,8 @@ func (e *FormatDescriptionEvent) Decode(data []byte) error {
 	v = r.LeftBytes()
 	e.EventTypeHeaderLengths = make([]byte, len(v))
 	copy(e.EventTypeHeaderLengths[0:], v)
+
+	r.End()
 
 	return nil
 }

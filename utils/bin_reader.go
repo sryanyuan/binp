@@ -1,4 +1,4 @@
-package mconn
+package utils
 
 import (
 	"bytes"
@@ -96,7 +96,7 @@ func (r *BinReader) ReadUint24() (uint32, error) {
 		return 0, errors.Trace(err)
 	}
 
-	v := uint32((uint32(data[2]) << 16) | (uint32(data[1] << 8)) | uint32(data[0]))
+	v := uint32((uint32(data[2]) << 16) | (uint32(data[1]) << 8) | uint32(data[0]))
 	return v, nil
 }
 
@@ -112,7 +112,7 @@ func (r *BinReader) ReadInt24() (int32, error) {
 		// Have sign flag
 		byte4 = 0xff << 24
 	}
-	v = int32((byte4 << 24) | (uint32(data[2]) << 16) | (uint32(data[1] << 8)) | uint32(data[0]))
+	v = int32((byte4 << 24) | (uint32(data[2]) << 16) | (uint32(data[1]) << 8) | uint32(data[0]))
 	return v, nil
 }
 
@@ -141,6 +141,27 @@ func (r *BinReader) ReadInt64() (int64, error) {
 		return 0, errors.Trace(err)
 	}
 	return int64(v), nil
+}
+
+// ReadBytesUntilTerm read the buffer bytes until meet terminate byte(0)
+func (r *BinReader) ReadBytesUntilTerm() ([]byte, error) {
+	lb := r.LeftBytes()
+	i := bytes.IndexByte(lb, 0)
+	if i < 0 {
+		return nil, errors.New("terminate character not found")
+	}
+	lb = lb[:i]
+	r.buf.Next(i + 1)
+	return lb, nil
+}
+
+// ReadStringUntilTerm read the buffer bytes until meet terminate byte(0)
+func (r *BinReader) ReadStringUntilTerm() (string, error) {
+	v, err := r.ReadBytesUntilTerm()
+	if nil != err {
+		return "", errors.Trace(err)
+	}
+	return string(v), nil
 }
 
 // ReadStringWithLen reads string with given length

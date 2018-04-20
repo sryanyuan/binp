@@ -33,10 +33,16 @@ type responseOptions struct {
 	binary bool
 }
 
-// ServerInfo represents the mysql server information returned by handshake
-type ServerInfo struct {
+// HandshakeInfo represents the mysql server information returned by handshake
+type HandshakeInfo struct {
 	ProtoVersion  byte
 	ServerVersion string
+	ConnectionID  uint32
+}
+
+func (i *HandshakeInfo) String() string {
+	return fmt.Sprintf("Protocol version:%d Server version:%s Connection id:%d",
+		i.ProtoVersion, i.ServerVersion, i.ConnectionID)
 }
 
 // Conn is a connection communicate with the mysql server
@@ -49,7 +55,7 @@ type Conn struct {
 	seq        uint8
 	capability uint32
 	loc        *time.Location
-	si         ServerInfo
+	si         HandshakeInfo
 	cfg        *ReplicationConfig
 	// TODO: support tls
 	tlsConfig *tls.Config
@@ -73,8 +79,8 @@ func (c *Conn) SetKeepalive(d time.Duration) bool {
 	return false
 }
 
-// GetServerInfo get the server information by handshake
-func (c *Conn) GetServerInfo(si *ServerInfo) {
+// GetHandshakeInfo get the server information by handshake
+func (c *Conn) GetHandshakeInfo(si *HandshakeInfo) {
 	*si = c.si
 }
 
@@ -126,6 +132,7 @@ func (c *Conn) Connect(host string, port uint16, username, password, database st
 		return errors.Trace(err)
 	}
 
+	c.mu.Unlock()
 	return nil
 }
 

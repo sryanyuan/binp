@@ -2,7 +2,7 @@ package binlog
 
 import (
 	"github.com/juju/errors"
-	"github.com/sryanyuan/binp/mconn"
+	"github.com/sryanyuan/binp/utils"
 )
 
 // QueryEvent sees below
@@ -23,7 +23,7 @@ type QueryEvent struct {
 
 // Decode decodes the binary data into payload
 func (e *QueryEvent) Decode(data []byte) error {
-	r := mconn.NewBinReader(data)
+	r := utils.NewBinReader(data)
 	var err error
 
 	e.SlaveProxyID, err = r.ReadUint32()

@@ -39,9 +39,17 @@ const (
 	WriteRowsEventV2Type
 	UpdateRowsEventV2Type
 	DeleteRowsEventV2Type
-	GtidEventType
+	GTIDEventType
 	AnonymousGtidEventType
 	PreviousGtidsEventType
+)
+
+// MariaDB binlog events
+const (
+	MariadbAnnotateRowsEventType = 160 + iota
+	MariadbBinlogCheckpointEventType
+	MariadbGTIDEventType
+	MariadbGTIDListEventType
 )
 
 // Flags of binlog event header's flag
@@ -101,6 +109,12 @@ type EventSet struct {
 	TableMap *TableMapEvent
 	// Rows event
 	Rows *RowsEvent
+	// Rows query event
+	RowsQuery *RowsQueryEvent
+	// Gtid event
+	GTID *GTIDEvent
+	// Mariadb gtid event
+	MariadbGTID *MariadbGTIDEvent
 }
 
 // Decode decodes binary data to a binlog event

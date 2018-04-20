@@ -1,8 +1,18 @@
 package binlog
 
 import (
+	"fmt"
+	"math"
+	"time"
+
 	"github.com/juju/errors"
 	"github.com/sryanyuan/binp/mconn"
+	"github.com/sryanyuan/binp/utils"
+)
+
+// Rows event flags
+const (
+	RowsEventFlagStmtEnd = 0x01
 )
 
 // Specify the rows event action
@@ -39,7 +49,7 @@ func isBitSet(bitmap []byte, i int) bool {
 }
 
 // Reference to log_event_print_value (log_event.cc)
-func readValue(r *mconn.BinReader, tp uint8, meta uint16) (interface{}, error) {
+func readValue(r *utils.BinReader, tp uint8, meta uint16) (interface{}, error) {
 
 	switch tp {
 	case mconn.FieldTypeNull:
@@ -88,17 +98,188 @@ func readValue(r *mconn.BinReader, tp uint8, meta uint16) (interface{}, error) {
 		}
 	case mconn.FieldTypeNewDecimal:
 		{
-			precision := int8(meta >> 8)
-			decimals := int8(meta & 0xff)
-			_ = precision
-			_ = decimals
+			precision := int(meta >> 8)
+			decimals := int(meta & 0xff)
+			fv, err := decodeDecimal(r, precision, decimals)
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			return fv, nil
+		}
+	case mconn.FieldTypeFloat:
+		{
+			v, err := r.ReadUint32()
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			return math.Float32frombits(v), nil
+		}
+	case mconn.FieldTypeDouble:
+		{
+			v, err := r.ReadUint64()
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			return math.Float64frombits(v), nil
+		}
+	case mconn.FieldTypeBit:
+		{
+			nbits := ((meta >> 8) * 8) + (meta & 0xff)
+			l := int((nbits + 7) / 8)
+			v, err := decodeBit(r, nbits, l)
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			return v, nil
+		}
+	case mconn.FieldTypeTimestamp:
+		{
+			v, err := r.ReadUint32()
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			tm := time.Unix(int64(v), 0)
+			return tm.String(), nil
+		}
+	case mconn.FieldTypeTimestamp2:
+		{
+			v, err := decodeTimestamp2(r, meta)
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			return v, nil
+		}
+	case mconn.FieldTypeDateTime:
+		{
+			v, err := decodeDatetime(r)
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			return v, nil
+		}
+	case mconn.FieldTypeDateTime2:
+		{
+			v, err := decodeDatetime2(r, meta)
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			return v, nil
+		}
+	case mconn.FieldTypeTime:
+		{
+			v, err := decodeTime(r)
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			return v, nil
+		}
+	case mconn.FieldTypeTime2:
+		{
+			v, err := decodeTime2(r, meta)
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			return v, nil
+		}
+	case mconn.FieldTypeNewDate:
+		{
+			v, err := decodeDate(r)
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			return v, nil
+		}
+	case mconn.FieldTypeYear:
+		{
+			v, err := r.ReadUint8()
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			return fmt.Sprintf("%d", 1900+int(v)), nil
+		}
+	case mconn.FieldTypeEnum:
+		{
+			v, err := decodeEnum(r, meta)
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			return v, nil
+		}
+	case mconn.FieldTypeSet:
+		{
+			n := int(meta & 0xFF)
+			nbits := n * 8
+
+			v, err := decodeBit(r, uint16(nbits), n)
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			return v, nil
+		}
+	case mconn.FieldTypeBlob:
+		{
+			v, err := decodeBlob(r, meta)
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			return v, nil
+		}
+	case mconn.FieldTypeVarChar,
+		mconn.FieldTypeVarString:
+		{
+			v, err := decodeVarChar(r, meta)
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			return v, nil
+		}
+	case mconn.FieldTypeString:
+		{
+			if meta >= 256 {
+				b0 := uint8(meta >> 8)
+				b1 := uint8(meta & 0xff)
+
+				if b0&0x30 != 0x30 {
+					meta = uint16(uint16(b1) | (uint16((b0&0x30)^0x30) << 4))
+					tp = byte(b0 | 0x30)
+				} else {
+					meta = uint16(meta & 0xff)
+					tp = b0
+				}
+			}
+			v, err := decodeVarChar(r, meta)
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			return v, nil
+		}
+	case mconn.FieldTypeJSON:
+		{
+			v, err := decodeJSON(r, meta)
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			return v, nil
+		}
+	case mconn.FieldTypeGeometry:
+		{
+			v, err := decodeBlob(r, meta)
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			return v, nil
+		}
+	default:
+		{
+			return nil, errors.Errorf("Don't know how to handle column type=%d meta=%d",
+				tp, meta)
 		}
 	}
 
-	return nil, errors.Errorf("Unknown type %v", tp)
+	//return nil, errors.Errorf("Unknown type %v", tp)
 }
 
-func (e *RowsEvent) readRow(r *mconn.BinReader, mask []byte) (*Row, error) {
+func (e *RowsEvent) readRow(r *utils.BinReader, mask []byte) (*Row, error) {
 	row := &Row{}
 	row.ColumnDatas = make([]interface{}, int(e.ColumnCount))
 	// Check how many column is presented
@@ -142,7 +323,7 @@ func (e *RowsEvent) readRow(r *mconn.BinReader, mask []byte) (*Row, error) {
 // Decode decodes the binary data into payload
 func (e *RowsEvent) Decode(data []byte) error {
 	var err error
-	r := mconn.NewBinReader(data)
+	r := utils.NewBinReader(data)
 
 	if e.tableIDSize == 4 {
 		tid, err := r.ReadUint32()
@@ -167,11 +348,14 @@ func (e *RowsEvent) Decode(data []byte) error {
 		if nil != err {
 			return errors.Trace(err)
 		}
-		eb, err := r.ReadBytes(int(el))
-		if nil != err {
-			return errors.Trace(err)
+		// extra_data [length=extra_data_len - 2], zero or more Binlog::RowsEventExtraData
+		if el-2 > 0 {
+			eb, err := r.ReadBytes(int(el) - 2)
+			if nil != err {
+				return errors.Trace(err)
+			}
+			e.ExtraData = eb
 		}
-		e.ExtraData = eb
 	}
 
 	e.ColumnCount, err = r.ReadLenencInt()
@@ -220,6 +404,8 @@ func (e *RowsEvent) Decode(data []byte) error {
 			e.Rows = append(e.Rows, row)
 		}
 	}
+
+	r.End()
 
 	return nil
 }
