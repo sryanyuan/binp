@@ -5,6 +5,8 @@ import (
 
 	"github.com/juju/errors"
 	"github.com/sirupsen/logrus"
+	"github.com/sryanyuan/binp/rule"
+	"github.com/sryanyuan/binp/utils"
 )
 
 // Parser parse the binlog event
@@ -12,6 +14,7 @@ type Parser struct {
 	tables   map[uint64]*TableMapEvent
 	format   *FormatDescriptionEvent
 	checksum uint8
+	srule    rule.ISyncRule
 }
 
 // NewParser create a new binlog parser
@@ -30,6 +33,12 @@ func (p *Parser) Reset() {
 // SetChecksum set the checksum of server binlog
 func (p *Parser) SetChecksum(cs uint8) {
 	p.checksum = cs
+}
+
+// SetSyncRule set the sync rule for the parser
+// Sync rule only effect rows event, ddl (query event) won't be effected
+func (p *Parser) SetSyncRule(r rule.ISyncRule) {
+	p.srule = r
 }
 
 // Parse parses binary data to binlog event
@@ -201,45 +210,17 @@ func (p *Parser) parsePayload(event *Event, data []byte) error {
 		DeleteRowsEventV0Type, DeleteRowsEventV1Type, DeleteRowsEventV2Type:
 		{
 			evt := &RowsEvent{}
-			evt.tables = p.tables
-			// Check the post header len from format description
-			if nil == p.format {
-				return errors.New("missing format description")
-			}
-			ei := int(event.Header.EventType) - 1
-			if ei >= len(p.format.EventTypeHeaderLengths) {
-				return errors.Errorf("incorrect index of event type header length, event type = %v, len = %v",
-					event.Header.EventType, len(p.format.EventTypeHeaderLengths))
-			}
-			evt.tableIDSize = 6
-			if p.format.EventTypeHeaderLengths[ei] == 6 {
-				evt.tableIDSize = 4
-			}
-			// Get the rows event version
-			et := event.Header.EventType
-			if et >= WriteRowsEventV0Type && et <= DeleteRowsEventV0Type {
-				evt.version = 0
-			} else if et >= WriteRowsEventV1Type && et <= DeleteRowsEventV1Type {
-				evt.version = 1
-			} else {
-				evt.version = 2
-			}
-
-			evt.Action = RowWrite
-			if et == UpdateRowsEventV0Type ||
-				et == UpdateRowsEventV1Type ||
-				et == UpdateRowsEventV2Type {
-				evt.Action = RowUpdate
-			}
-			if et == DeleteRowsEventV0Type ||
-				et == DeleteRowsEventV1Type ||
-				et == DeleteRowsEventV2Type {
-				evt.Action = RowDelete
-			}
-
-			event.Payload.Parsed = true
 			event.Payload.Rows = evt
-			payload = evt
+			event.Payload.Parsed = true
+
+			// Find the table map event of the table
+			if data, err = p.preParseRowsEvent(event, data); nil != err {
+				return errors.Trace(err)
+			}
+
+			if event.Payload.Parsed {
+				payload = evt
+			}
 		}
 	case RowsQueryEventType:
 		{
@@ -273,4 +254,74 @@ func (p *Parser) parsePayload(event *Event, data []byte) error {
 	}
 
 	return nil
+}
+
+func (p *Parser) preParseRowsEvent(event *Event, data []byte) ([]byte, error) {
+	evt := event.Payload.Rows
+	// Check the post header len from format description
+	if nil == p.format {
+		return data, errors.New("missing format description")
+	}
+	ei := int(event.Header.EventType) - 1
+	if ei >= len(p.format.EventTypeHeaderLengths) {
+		return data, errors.Errorf("incorrect index of event type header length, event type = %v, len = %v",
+			event.Header.EventType, len(p.format.EventTypeHeaderLengths))
+	}
+	evt.tableIDSize = 6
+	if p.format.EventTypeHeaderLengths[ei] == 6 {
+		evt.tableIDSize = 4
+	}
+	// Get table map event
+	r := utils.NewBinReader(data)
+	if 4 == evt.tableIDSize {
+		tid, err := r.ReadUint32()
+		if nil != err {
+			return data, errors.Trace(err)
+		}
+		evt.TableID = uint64(tid)
+	} else {
+		tid, err := r.ReadUint48()
+		if nil != err {
+			return data, errors.Trace(err)
+		}
+		evt.TableID = uint64(tid)
+	}
+	tm, ok := p.tables[evt.TableID]
+	if !ok {
+		return data, errors.Errorf("missing table map event %d while parsing rows event",
+			evt.TableID)
+	}
+	evt.Table = tm
+	// Check sync rule if set
+	if nil != p.srule {
+		desc := p.srule.CanSyncTable(tm.SchemaName, tm.TableName)
+		if nil == desc {
+			event.Payload.Parsed = false
+			return data, nil
+		}
+		evt.Rule = desc
+	}
+	// Get the rows event version
+	et := event.Header.EventType
+	if et >= WriteRowsEventV0Type && et <= DeleteRowsEventV0Type {
+		evt.version = 0
+	} else if et >= WriteRowsEventV1Type && et <= DeleteRowsEventV1Type {
+		evt.version = 1
+	} else {
+		evt.version = 2
+	}
+
+	evt.Action = RowWrite
+	if et == UpdateRowsEventV0Type ||
+		et == UpdateRowsEventV1Type ||
+		et == UpdateRowsEventV2Type {
+		evt.Action = RowUpdate
+	}
+	if et == DeleteRowsEventV0Type ||
+		et == DeleteRowsEventV1Type ||
+		et == DeleteRowsEventV2Type {
+		evt.Action = RowDelete
+	}
+
+	return r.LeftBytes(), nil
 }

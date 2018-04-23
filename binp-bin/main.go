@@ -1,10 +1,13 @@
 package main
 
 import (
+	"flag"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/sryanyuan/binp/rule"
 
 	"github.com/juju/errors"
 	"github.com/sirupsen/logrus"
@@ -14,6 +17,10 @@ import (
 	_ "net/http/pprof"
 )
 
+var (
+	flagConfigPath string
+)
+
 func main() {
 	// Debug pprof
 	if os.Getenv("HTTP_PPROF") != "" {
@@ -21,20 +28,42 @@ func main() {
 	}
 	var err error
 	var config AppConfig
-	config.Log.Level = "debug"
 
+	// Get config
+	flag.StringVar(&flagConfigPath, "config", "", "config file path")
+	flag.Parse()
+
+	if "" == flagConfigPath {
+		logrus.Infof("missing config file")
+		flag.PrintDefaults()
+		return
+	}
+
+	err = config.fromJSONFile(flagConfigPath)
+	if nil != err {
+		logrus.Infof("parse config file %v error = %v", flagConfigPath, err)
+		return
+	}
+
+	// Set log config
 	if err = initLog(&config.Log); nil != err {
 		logrus.Errorf("init log error = %v", err)
 		return
 	}
 
-	slv := slave.NewSlave(&mconn.ReplicationConfig{
-		Host:     "10.100.47.4",
-		Port:     3310,
-		Username: "root",
-		Password: "password",
-		SlaveID:  24,
-	})
+	// Set sync rule config
+	sds, err := config.SRule.ToSyncDescs()
+	if nil != err {
+		logrus.Errorf("init sync rule desc error = %v", err)
+		return
+	}
+	sr, err := rule.NewDefaultSyncRuleWithRules(sds)
+	if nil != err {
+		logrus.Errorf("init sync rule error = %v", err)
+		return
+	}
+
+	slv := slave.NewSlave(&config.DataSource, sr)
 	if err = slv.Start(mconn.Position{}); nil != err {
 		logrus.Error(errors.Details(err))
 		return

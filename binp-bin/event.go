@@ -66,6 +66,13 @@ func (e *EventHandler) onBinlogEvent(event *binlog.Event) error {
 			evt := event.Payload.Query
 			logrus.Debugf("query %v", evt.Query)
 		}
+	case binlog.WriteRowsEventV0Type, binlog.WriteRowsEventV1Type, binlog.WriteRowsEventV2Type,
+		binlog.UpdateRowsEventV0Type, binlog.UpdateRowsEventV1Type, binlog.UpdateRowsEventV2Type,
+		binlog.DeleteRowsEventV0Type, binlog.DeleteRowsEventV1Type, binlog.DeleteRowsEventV2Type:
+		{
+			evt := event.Payload.Rows
+			logrus.Debugf("%v", evt)
+		}
 	}
 	return nil
 }

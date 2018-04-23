@@ -15,7 +15,10 @@
             "host": "127.0.0.1",
             "program": "${workspaceRoot}/binp-bin",
             "env": {},
-            "args": [],
+            "args": [
+                "-config",
+                "conf/app.dev.json"
+            ],
             "showLog": true
         }
     ]

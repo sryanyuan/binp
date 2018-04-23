@@ -1,3 +1,5 @@
 binp-bin/debug
 *.exe
 *.exe~
+debug.test
+*.dev.*

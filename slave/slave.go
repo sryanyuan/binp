@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sryanyuan/binp/rule"
+
 	"github.com/sryanyuan/binp/binlog"
 
 	"github.com/sryanyuan/binp/mconn"
@@ -55,9 +57,11 @@ type Slave struct {
 }
 
 // NewSlave creates a new slave
-func NewSlave(cfg *mconn.ReplicationConfig) *Slave {
+func NewSlave(cfg *mconn.ReplicationConfig, srule rule.ISyncRule) *Slave {
 	sl := &Slave{}
+	// Create parser
 	sl.parser = binlog.NewParser()
+	sl.parser.SetSyncRule(srule)
 	sl.cancelCtx, sl.cancelFn = context.WithCancel(context.Background())
 	sl.config = cfg
 	// Create event queue

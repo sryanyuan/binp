@@ -5,6 +5,8 @@ import (
 	"math"
 	"time"
 
+	"github.com/sryanyuan/binp/rule"
+
 	"github.com/juju/errors"
 	"github.com/sryanyuan/binp/mconn"
 	"github.com/sryanyuan/binp/utils"
@@ -31,7 +33,6 @@ type Row struct {
 // https://dev.mysql.com/doc/internals/en/rows-event.html
 type RowsEvent struct {
 	tableIDSize uint8
-	tables      map[uint64]*TableMapEvent
 	version     int
 	Action      int
 	TableID     uint64
@@ -42,6 +43,8 @@ type RowsEvent struct {
 	Bitmap1     []byte
 	Bitmap2     []byte
 	Rows        []*Row
+	// Sync desc
+	Rule *rule.SyncDesc
 }
 
 func isBitSet(bitmap []byte, i int) bool {
@@ -325,7 +328,8 @@ func (e *RowsEvent) Decode(data []byte) error {
 	var err error
 	r := utils.NewBinReader(data)
 
-	if e.tableIDSize == 4 {
+	// Table map event is fetched by parser, not here
+	/*if e.tableIDSize == 4 {
 		tid, err := r.ReadUint32()
 		if nil != err {
 			return errors.Trace(err)
@@ -337,6 +341,13 @@ func (e *RowsEvent) Decode(data []byte) error {
 			return errors.Trace(err)
 		}
 	}
+
+	// Find table map event in parser's cache
+	tm, ok := e.tables[e.TableID]
+	if !ok {
+		return errors.Errorf("%v not found in table map cache", e.TableID)
+	}
+	e.Table = tm*/
 
 	e.Flags, err = r.ReadUint16()
 	if nil != err {
@@ -375,13 +386,6 @@ func (e *RowsEvent) Decode(data []byte) error {
 			return errors.Trace(err)
 		}
 	}
-
-	// Find table map event in parser's cache
-	tm, ok := e.tables[e.TableID]
-	if !ok {
-		return errors.Errorf("%v not found in table map cache", e.TableID)
-	}
-	e.Table = tm
 
 	// Read rows
 	e.Rows = make([]*Row, 0, 8)

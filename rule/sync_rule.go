@@ -24,9 +24,6 @@ func (d *SyncDesc) Validate() error {
 	if "" == d.Schema {
 		return errors.Trace(ErrInvalidSyncDescSchema)
 	}
-	if "" == d.Table {
-		return errors.Trace(ErrInvalidSyncDescTable)
-	}
 	return nil
 }
 
@@ -36,7 +33,7 @@ func (d *SyncDesc) Validate() error {
 // is running
 type ISyncRule interface {
 	// schema and table, returns rewrite schema and table name
-	CanSyncTable(string, string) (string, string, bool)
+	CanSyncTable(string, string) *SyncDesc
 	// insert new schema rule
 	NewRule(*SyncDesc) error
 }

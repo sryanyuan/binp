@@ -1,9 +1,6 @@
 package rule
 
 import (
-	"regexp"
-	"strings"
-
 	"github.com/juju/errors"
 )
 
@@ -12,62 +9,12 @@ var (
 	ErrRuleConflict = errors.New("Rule conflicts")
 )
 
-type syncDescRegexp struct {
-	*SyncDesc
-	reg *regexp.Regexp
-}
-
-type ruleContainer struct {
-	consts map[string]*SyncDesc
-	regs   []*syncDescRegexp
-}
-
-func (c *ruleContainer) init() {
-	c.consts = make(map[string]*SyncDesc)
-	c.regs = make([]*syncDescRegexp, 0, 64)
-}
-
-func (c *ruleContainer) add(key string, desc *SyncDesc) error {
-	if strings.HasPrefix(key, "^") && strings.HasPrefix(key, "$") {
-		// Key with regexp expression
-		r, err := regexp.Compile(key)
-		if nil != err {
-			return errors.Trace(err)
-		}
-		c.regs = append(c.regs, &syncDescRegexp{reg: r, SyncDesc: desc})
-	} else {
-		c.consts[key] = desc
-	}
-
-	return nil
-}
-
-func (c *ruleContainer) find(key string) *SyncDesc {
-	// Search for constant map
-	v, ok := c.consts[key]
-	if ok {
-		return v
-	}
-	// Search for regexps
-	for _, v := range c.regs {
-		if v.reg.MatchString(key) {
-			return v.SyncDesc
-		}
-	}
-	return nil
-}
-
-func newRuleContainer() *ruleContainer {
-	c := &ruleContainer{}
-	c.init()
-	return c
-}
-
 type defaultSchemaRule struct {
 	ruleContainer
 	desc SyncDesc
 	// Table rule
 	tablesRule map[string]*SyncDesc
+	passAll    bool
 }
 
 func (r *defaultSchemaRule) addRule(desc *SyncDesc) error {
@@ -76,15 +23,21 @@ func (r *defaultSchemaRule) addRule(desc *SyncDesc) error {
 	if nil == r.tablesRule {
 		r.tablesRule = make(map[string]*SyncDesc)
 	}
-	ts, ok := r.tablesRule[desc.Table]
-	if ok {
-		return errors.Trace(ErrRuleConflict)
-	}
+	// Initialize schema info
 	if "" == r.desc.Schema && "" == r.desc.RewriteSchema {
 		r.desc.Schema = desc.Schema
 		r.desc.RewriteSchema = desc.RewriteSchema
 	}
 	if r.desc.Schema != desc.Schema || r.desc.RewriteSchema != desc.RewriteSchema {
+		return errors.Trace(ErrRuleConflict)
+	}
+	// If desc.Table is empty, we should handle the rule as full pass rule
+	if "" == desc.Table {
+		r.passAll = true
+		return nil
+	}
+	ts, ok := r.tablesRule[desc.Table]
+	if ok {
 		return errors.Trace(ErrRuleConflict)
 	}
 	// Make a copy
@@ -96,6 +49,27 @@ func (r *defaultSchemaRule) addRule(desc *SyncDesc) error {
 		return errors.Trace(err)
 	}
 
+	return nil
+}
+
+func (r *defaultSchemaRule) canSync(table string) *SyncDesc {
+	if nil == r.tablesRule {
+		return nil
+	}
+	// Do search
+	desc := r.find(table)
+	if nil != desc {
+		return desc
+	}
+	if r.passAll {
+		// Full pass
+		return &SyncDesc{
+			Schema:        r.desc.Schema,
+			RewriteSchema: r.desc.RewriteSchema,
+			Table:         table,
+			RewriteTable:  table,
+		}
+	}
 	return nil
 }
 
@@ -113,13 +87,49 @@ func NewDefaultSyncRule() *DefaultSyncRule {
 	return r
 }
 
-// CanSyncTable implements ISyncRule CanSyncTable
-func (r *DefaultSyncRule) CanSyncTable(schema, table string) (string, string, bool) {
-	if nil == r.schemasRule {
-		// If is nil, always pass
-		return schema, table, true
+// NewDefaultSyncRuleWithRules creates a new DefaultSyncRule with rules
+func NewDefaultSyncRuleWithRules(rs []*SyncDesc) (*DefaultSyncRule, error) {
+	r := NewDefaultSyncRule()
+	for _, v := range rs {
+		err := r.NewRule(v)
+		if nil != err {
+			return nil, errors.Trace(err)
+		}
 	}
-	return schema, table, false
+	return r, nil
+}
+
+// NewDefaultSyncRuleFromJSON creates a new DefaultSyncRule from json data
+func NewDefaultSyncRuleFromJSON(data []byte) (*DefaultSyncRule, error) {
+	rc := NewDefaultSyncConfig()
+	rs, err := rc.ParseJSON(data)
+	if nil != err {
+		return nil, errors.Trace(err)
+	}
+	return NewDefaultSyncRuleWithRules(rs)
+}
+
+// CanSyncTable implements ISyncRule CanSyncTable
+func (r *DefaultSyncRule) CanSyncTable(schema, table string) *SyncDesc {
+	if nil == r.schemasRule {
+		// If is nil, always pass all schema and table
+		return &SyncDesc{
+			Schema:        schema,
+			Table:         table,
+			RewriteSchema: schema,
+			RewriteTable:  table,
+		}
+	}
+	// Find schema rule
+	schemaDesc := r.find(schema)
+	if nil == schemaDesc {
+		return nil
+	}
+	schemaRule, ok := r.schemasRule[schemaDesc.Schema]
+	if !ok {
+		return nil
+	}
+	return schemaRule.canSync(table)
 }
 
 // NewRule implements ISyncRule NewRule
@@ -131,11 +141,10 @@ func (r *DefaultSyncRule) NewRule(desc *SyncDesc) error {
 		r.schemasRule = make(map[string]*defaultSchemaRule)
 	}
 	sr, ok := r.schemasRule[desc.Schema]
-	if ok {
-		return errors.Trace(ErrRuleConflict)
+	if !ok {
+		sr = &defaultSchemaRule{}
+		sr.init()
 	}
-	sr = &defaultSchemaRule{}
-	sr.init()
 	if err := sr.addRule(desc); nil != err {
 		return errors.Trace(err)
 	}
