@@ -39,7 +39,7 @@ func main() {
 		return
 	}
 
-	err = config.fromJSONFile(flagConfigPath)
+	err = config.fromFile(flagConfigPath)
 	if nil != err {
 		logrus.Infof("parse config file %v error = %v", flagConfigPath, err)
 		return

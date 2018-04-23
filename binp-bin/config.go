@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"os"
+	"path"
+	"strings"
 
+	"github.com/BurntSushi/toml"
 	"github.com/juju/errors"
 	"github.com/sryanyuan/binp/mconn"
 	"github.com/sryanyuan/binp/rule"
@@ -17,8 +20,8 @@ type AppConfig struct {
 	SRule      rule.DefaultSyncConfig  `json:"sync-rule" toml:"sync-rule"`
 }
 
-func (c *AppConfig) fromJSONFile(path string) error {
-	f, err := os.Open(path)
+func (c *AppConfig) fromFile(cpath string) error {
+	f, err := os.Open(cpath)
 	if nil != err {
 		return errors.Trace(err)
 	}
@@ -29,10 +32,33 @@ func (c *AppConfig) fromJSONFile(path string) error {
 		return errors.Trace(err)
 	}
 
-	err = json.Unmarshal(data, c)
+	// Get config file extension
+	ext := path.Ext(cpath)
+	if strings.ToLower(ext) == ".toml" {
+		err = c.fromTOMLBinary(data)
+	} else {
+		err = c.fromJSONBinary(data)
+	}
+
 	if nil != err {
 		return errors.Trace(err)
 	}
 
+	return nil
+}
+
+func (c *AppConfig) fromJSONBinary(data []byte) error {
+	err := json.Unmarshal(data, c)
+	if nil != err {
+		return errors.Trace(err)
+	}
+	return nil
+}
+
+func (c *AppConfig) fromTOMLBinary(data []byte) error {
+	_, err := toml.Decode(string(data), c)
+	if nil != err {
+		return errors.Trace(err)
+	}
 	return nil
 }
