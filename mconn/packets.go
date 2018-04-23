@@ -2,7 +2,6 @@ package mconn
 
 import (
 	"crypto/sha1"
-	"encoding/binary"
 
 	"github.com/juju/errors"
 	"github.com/sryanyuan/binp/utils"
@@ -173,117 +172,6 @@ func (p *PacketHandshake) Decode(data []byte) error {
 	return nil
 }
 
-/* Deprecated version of decode
-// Decode read binary data into handshake packet
-// https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::Handshake
-func (p *PacketHandshake) Decode_(data []byte) error {
-	dl := len(data)
-	// protocol version
-	if dl < 1 {
-		return errors.New("parse protocol version error")
-	}
-	rptr := 0
-	p.ProtocolVersion = data[0]
-	rptr++
-	// server version
-	eptr := bytes.IndexByte(data[1:], 0)
-	if eptr < 0 {
-		return errors.New("parse server version error")
-	}
-	p.ServerVersion = string(data[1 : eptr+1])
-	rptr = eptr + 1 + 1
-	// connection id
-	if rptr+3 >= dl {
-		return errors.New("parse connection id error")
-	}
-	p.ConnectionID = binary.LittleEndian.Uint32(data[rptr:])
-	rptr += 4
-	// auth plugin data part 1
-	if rptr+7 >= dl {
-		return errors.New("parse auth plungin data part 1 error")
-	}
-	p.AuthPluginDataPart = make([]byte, 8, 8+13)
-	copy(p.AuthPluginDataPart[:], data[rptr:rptr+8])
-	rptr += 8
-	// filter
-	if rptr >= dl {
-		return errors.New("parse filter error")
-	}
-	p.Filter = data[rptr]
-	rptr++
-	// capability_flag_1 lower bytes
-	if rptr+1 >= dl {
-		return errors.New("parse capability_flag_1 error")
-	}
-	p.CapabilityFlags = uint32(binary.LittleEndian.Uint16(data[rptr:]))
-	logrus.Debugf("low capability %v", p.CapabilityFlags)
-	rptr += 2
-	// character set
-	if rptr >= dl {
-		// No more data
-		return nil
-	}
-	p.CharacterSet = data[rptr]
-	rptr++
-	// status flags
-	if rptr+1 >= dl {
-		return errors.New("parse status flags error")
-	}
-	p.StatusFlags = binary.LittleEndian.Uint16(data[rptr:])
-	rptr += 2
-	// capability flags 2 upper bytes
-	if rptr+1 >= dl {
-		return errors.New("parse capability_flag_2 error")
-	}
-	p.CapabilityFlags = uint32(binary.LittleEndian.Uint16(data[rptr:]))<<16 | p.CapabilityFlags
-	rptr += 2
-	// auth plugin data len
-	authPluginDataLen := uint8(0)
-	if (p.CapabilityFlags & clientPluginAuth) != 0 {
-		if rptr >= dl {
-			return errors.New("parse auth plugin data len error")
-		}
-		authPluginDataLen = data[rptr]
-		rptr++
-	}
-	// Reserved string(10)
-	if rptr+9 >= dl {
-		return errors.New("parse reserved error")
-	}
-	rptr += 10
-	// auth plugin data part2
-	if (p.CapabilityFlags & clientSecureConnection) != 0 {
-		// auth plugin data part2 length is mutable. $len=MAX(13, length of auth-plugin-data - 8)
-		p2len := authPluginDataLen - 8
-		if p2len > 13 {
-			p2len = 13
-		}
-		if rptr+int(p2len)-1 >= dl {
-			return errors.New("parse auth plugin data 2 error")
-		}
-		// mysql-5.7/sql/auth/sql_authentication.cc line 538, the 13th byte is '\0',
-		// so it is a null terminated string.so we read the data as a null terminated string.
-		p.AuthPluginDataPart = append(p.AuthPluginDataPart, data[rptr:rptr+int(p2len)-1]...)
-		rptr += int(p2len)
-	}
-	// auth-plugin name
-	if (p.CapabilityFlags & clientPluginAuth) != 0 {
-		// Find null
-		eptr = bytes.IndexByte(data[rptr:], 0)
-		if eptr < 0 {
-			return errors.New("parse auth plugin name failed")
-		}
-		p.AUthPluginName = string(data[rptr : rptr+eptr])
-		rptr = rptr + eptr
-	}
-	// Check to the terminal
-	if rptr+1 != dl {
-		return errors.New("invalid eof")
-	}
-
-	return nil
-}*/
-
 // PacketHandshakeResponse responses the handshake packet to server
 // https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::HandshakeResponse
 type PacketHandshakeResponse struct {
@@ -355,6 +243,69 @@ func (p *PacketHandshakeResponse) encodePass(key []byte) []byte {
 func (p *PacketHandshakeResponse) Encode() []byte {
 	p.passEncoded = p.encodePass(p.AuthPluginData)
 
+	var err error
+	sz := p.esitimateSize()
+	data := make([]byte, sz)
+	w := utils.NewBinWriter(data)
+
+	// Skip the payload length, auto fill by WritePacket
+	if err = w.WriteUint32(0); nil != err {
+		panic(err)
+	}
+
+	// capability flags
+	cpv := p.CapabilityFlags | clientProtocol41
+	if len(p.Database) != 0 {
+		cpv |= clientConnectWithDB
+	}
+	if err = w.WriteUint32(cpv); nil != err {
+		panic(err)
+	}
+	// max packet size, always 0
+	if err = w.WriteUint32(0); nil != err {
+		panic(err)
+	}
+	// charset
+	if err = w.WriteUint8(p.Charset); nil != err {
+		panic(err)
+	}
+	// TODO: tls/ssl
+	// 23bytes reserved
+	reserved := [23]byte{}
+	if err = w.WriteBytes(reserved[:]); nil != err {
+		panic(err)
+	}
+	// username + null
+	if err = w.WriteStringWithTerm(p.Username); nil != err {
+		panic(err)
+	}
+	// len + password
+	if nil == p.passEncoded {
+		if err = w.WriteUint8(0); nil != err {
+			panic(err)
+		}
+	} else {
+		if err = w.WriteLenBytes(p.passEncoded); nil != err {
+			panic(err)
+		}
+	}
+	// db name + null
+	if err = w.WriteStringWithTerm(p.Database); nil != err {
+		panic(err)
+	}
+	// client auth plugin
+	if err = w.WriteBytes([]byte(MySQLNativePasswordPlugin)); nil != err {
+		panic(err)
+	}
+
+	return w.Bytes()
+}
+
+// Deprecated version
+/*// Encode serialize the handshake response
+func (p *PacketHandshakeResponse) Encode() []byte {
+	p.passEncoded = p.encodePass(p.AuthPluginData)
+
 	sz := p.esitimateSize()
 	data := make([]byte, sz)
 	// Skip the payload length, auto fill by WritePacket
@@ -399,7 +350,7 @@ func (p *PacketHandshakeResponse) Encode() []byte {
 	wptr += len(MySQLNativePasswordPlugin)
 
 	return data
-}
+}*/
 
 // PacketOK parses mysql OK_Packet
 // https://dev.mysql.com/doc/internals/en/packet-OK_Packet.html
@@ -468,44 +419,6 @@ func (p *PacketOK) Decode(data []byte) error {
 	return nil
 }
 
-/* Deprecated version of decode
-// Decode decodes binary data to mysql packet
-func (p *PacketOK) Decode(data []byte) error {
-	wptr := 0
-	p.Header = data[wptr]
-	wptr++
-
-	// Check the ok packet is a eof packet
-	if p.Header == PacketHeaderEOF && len(data) < 9 {
-		p.EOF = true
-		return nil
-	}
-
-	offset := p.AffectedRows.FromData(data[wptr:])
-	wptr += offset
-	offset = p.LastInsertID.FromData(data[wptr:])
-	wptr += offset
-
-	if (p.capabilityFlags & clientProtocol41) != 0 {
-		p.StatusFlags = binary.LittleEndian.Uint16(data[wptr:])
-		wptr += 2
-		// Reading the next status message
-		p.Warnings = 0
-	} else if (p.capabilityFlags & clientTransactions) != 0 {
-		p.StatusFlags = binary.LittleEndian.Uint16(data[wptr:])
-		wptr += 2
-	}
-
-	// If has not ClientSessionTrace, left part is the warning message
-	if 0 == (clientSessionTrace & p.capabilityFlags) {
-
-	}
-
-	// TODO: parsing the left fields
-
-	return nil
-}*/
-
 // PacketErr parses mysql OK_Packet
 // https://dev.mysql.com/doc/internals/en/packet-ERR_Packet.html
 type PacketErr struct {
@@ -557,32 +470,6 @@ func (p *PacketErr) Decode(data []byte) error {
 	return nil
 }
 
-/* Deprecated version of decode
-// Decode decodes binary data to mysql packet
-func (p *PacketErr) Decode(data []byte) error {
-	wptr := 0
-	p.Header = data[wptr]
-	wptr++
-
-	if p.Header != PacketHeaderERR {
-		return errors.Errorf("Not a packet err, header = %v", p.Header)
-	}
-
-	p.ErrorCode = binary.LittleEndian.Uint16(data[wptr:])
-	wptr += 2
-
-	if 0 != (p.capabilityFlags & clientProtocol41) {
-		// Skip marker of the sql state
-		wptr++
-		p.State = string(data[wptr : wptr+5])
-		wptr += 5
-	}
-	// Reading the error message until eof
-	p.ErrorMessage = string(data[wptr:])
-
-	return nil
-}*/
-
 // PacketComStr is used to send the server a text-based query that is executed immediately
 type PacketComStr struct {
 	command string
@@ -592,9 +479,19 @@ type PacketComStr struct {
 func (p *PacketComStr) Encode() ([]byte, error) {
 	buflen := len(p.command) + 1 + 4
 	data := make([]byte, buflen)
-	data[4] = comQuery
-	copy(data[5:], []byte(p.command))
-	return data, nil
+
+	w := utils.NewBinWriter(data)
+	if err := w.WriteUint32(0); nil != err {
+		panic(err)
+	}
+	if err := w.WriteUint8(comQuery); nil != err {
+		panic(err)
+	}
+	if err := w.WriteEOFString(p.command); nil != err {
+		panic(err)
+	}
+
+	return w.Bytes(), nil
 }
 
 // PacketEOF represents the eof of packets
@@ -608,12 +505,31 @@ func (p *PacketEOF) Decode(data []byte) error {
 	if len(data) != 5 {
 		return ErrMalformPacket
 	}
-	if data[0] != PacketHeaderEOF {
+	r := utils.NewBinReader(data)
+	header, err := r.ReadUint8()
+	if nil != err {
+		return errors.Trace(err)
+	}
+	if header != PacketHeaderEOF {
+		return errors.New("not a eof packet")
+	}
+	p.warnings, err = r.ReadUint16()
+	if nil != err {
+		return errors.Trace(err)
+	}
+	p.status, err = r.ReadUint16()
+	if nil != err {
+		return errors.Trace(err)
+	}
+
+	return nil
+
+	/*if data[0] != PacketHeaderEOF {
 		return errors.New("not a eof packet")
 	}
 	p.warnings = binary.LittleEndian.Uint16(data[1:])
 	p.status = binary.LittleEndian.Uint16(data[3:])
-	return nil
+	return nil*/
 }
 
 // PacketRegisterSlave register slave to master
@@ -632,7 +548,46 @@ type PacketRegisterSlave struct {
 func (p *PacketRegisterSlave) Encode() ([]byte, error) {
 	l := 4 + 1 + 4 + 1 + len(p.Hostname) + 1 + len(p.User) + 1 + len(p.Password) + 2 + 4 + 4
 	data := make([]byte, l)
-	wptr := 4
+
+	w := utils.NewBinWriter(data)
+	if err := w.WriteUint32(0); nil != err {
+		return nil, errors.Trace(err)
+	}
+
+	if err := w.WriteUint8(comRegisterSlave); nil != err {
+		return nil, errors.Trace(err)
+	}
+	// the slaves server-id
+	if err := w.WriteUint32(p.ServerID); nil != err {
+		return nil, errors.Trace(err)
+	}
+	// see --report-host, usually empty
+	if err := w.WriteLenString(p.Hostname); nil != err {
+		return nil, errors.Trace(err)
+	}
+	// see --report-host, usually empty
+	if err := w.WriteLenString(p.User); nil != err {
+		return nil, errors.Trace(err)
+	}
+	// see --report-password, usually empty
+	if err := w.WriteLenString(p.Password); nil != err {
+		return nil, errors.Trace(err)
+	}
+	// see --report-port, usually empty
+	if err := w.WriteUint16(p.Port); nil != err {
+		return nil, errors.Trace(err)
+	}
+	// ignored rank
+	if err := w.WriteUint32(p.Rank); nil != err {
+		return nil, errors.Trace(err)
+	}
+	// usually 0. Appears as "master id" in SHOW SLAVE HOSTS on the master. Unknown what else it impacts
+	if err := w.WriteUint32(p.MasterID); nil != err {
+		return nil, errors.Trace(err)
+	}
+	return w.Bytes(), nil
+
+	/*wptr := 4
 	data[wptr] = comRegisterSlave
 	wptr++
 
@@ -655,7 +610,7 @@ func (p *PacketRegisterSlave) Encode() ([]byte, error) {
 	// usually 0. Appears as "master id" in SHOW SLAVE HOSTS on the master. Unknown what else it impacts
 	binary.LittleEndian.PutUint32(data[wptr:], p.MasterID)
 
-	return data, nil
+	return data, nil*/
 }
 
 // PacketBinlogDump to enable replication
@@ -667,6 +622,35 @@ type PacketBinlogDump struct {
 }
 
 // Encode encodes the packet to binary data
+func (p *PacketBinlogDump) Encode() ([]byte, error) {
+	l := 4 + 1 + 4 + 2 + 4 + len(p.BinlogFile)
+	data := make([]byte, l)
+	w := utils.NewBinWriter(data)
+
+	if err := w.WriteUint32(0); nil != err {
+		return nil, errors.Trace(err)
+	}
+	if err := w.WriteUint8(comBinlogDump); nil != err {
+		return nil, errors.Trace(err)
+	}
+	if err := w.WriteUint32(p.BinlogPos); nil != err {
+		return nil, errors.Trace(err)
+	}
+	if err := w.WriteUint16(p.Flags); nil != err {
+		return nil, errors.Trace(err)
+	}
+	if err := w.WriteUint32(p.ServerID); nil != err {
+		return nil, errors.Trace(err)
+	}
+	if err := w.WriteEOFString(p.BinlogFile); nil != err {
+		return nil, errors.Trace(err)
+	}
+
+	return w.Bytes(), nil
+}
+
+// Deprecated version
+/*// Encode encodes the packet to binary data
 func (p *PacketBinlogDump) Encode() ([]byte, error) {
 	l := 4 + 1 + 4 + 2 + 4 + len(p.BinlogFile)
 	data := make([]byte, l)
@@ -684,4 +668,4 @@ func (p *PacketBinlogDump) Encode() ([]byte, error) {
 		copy(data[wptr:], p.BinlogFile)
 	}
 	return data, nil
-}
+}*/

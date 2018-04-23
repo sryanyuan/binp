@@ -73,6 +73,16 @@ func (e *EventHandler) onBinlogEvent(event *binlog.Event) error {
 			evt := event.Payload.Rows
 			logrus.Debugf("%v", evt)
 		}
+	case binlog.GTIDEventType:
+		{
+			evt := event.Payload.GTID
+			logrus.Debugf("%v", evt)
+		}
+	case binlog.MariadbGTIDEventType:
+		{
+			evt := event.Payload.MariadbGTID
+			logrus.Debugf("%v", evt)
+		}
 	}
 	return nil
 }
