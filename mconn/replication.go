@@ -6,18 +6,24 @@ import (
 	"github.com/juju/errors"
 )
 
+// DBConfig is the connection information to db server
+type DBConfig struct {
+	Type     string `json:"type" toml:"type"`
+	Host     string `json:"host" toml:"host"`
+	Port     uint16 `json:"port" toml:"port"`
+	Username string `json:"username" toml:"username"`
+	Password string `json:"password" toml:"password"`
+	Charset  string `json:"charset" toml:"charset"`
+}
+
 // ReplicationConfig specify the master information
 type ReplicationConfig struct {
-	Host            string   `json:"host" toml:"host"`
-	Port            uint16   `json:"port" toml:"port"`
-	Username        string   `json:"username" toml:"username"`
-	Password        string   `json:"password" toml:"password"`
-	Charset         string   `json:"charset" toml:"charset"`
-	SlaveID         uint32   `json:"slave-id" toml:"slave-id"`
-	Pos             Position `json:"position" toml:"position"`
-	EnableGtid      bool     `json:"enable-gtid" toml:"enable-gtid"`
-	EventBufferSize int      `json:"event-buffer-size" toml:"event-buffer-size"`
-	KeepAlivePeriod int      `json:"keepalive-period" toml:"keepalive-period"`
+	DBConfig
+	SlaveID uint32 `json:"slave-id" toml:"slave-id"`
+	//Pos             Position `json:"position" toml:"position"`
+	EnableGtid      bool `json:"enable-gtid" toml:"enable-gtid"`
+	EventBufferSize int  `json:"event-buffer-size" toml:"event-buffer-size"`
+	KeepAlivePeriod int  `json:"keepalive-period" toml:"keepalive-period"`
 }
 
 // Position represents a binlog replication position, slave can

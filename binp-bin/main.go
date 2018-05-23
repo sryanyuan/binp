@@ -11,7 +11,6 @@ import (
 
 	"github.com/juju/errors"
 	"github.com/sirupsen/logrus"
-	"github.com/sryanyuan/binp/mconn"
 	"github.com/sryanyuan/binp/slave"
 
 	_ "net/http/pprof"
@@ -64,12 +63,12 @@ func main() {
 	}
 
 	slv := slave.NewSlave(&config.DataSource, sr)
-	if err = slv.Start(mconn.Position{}); nil != err {
-		logrus.Error(errors.Details(err))
+	handler := NewEventHandler(slv, &config)
+	if err = handler.Prepare(); nil != err {
+		logrus.Errorf(errors.Details(err))
 		return
 	}
 
-	handler := NewEventHandler(slv)
 	eh := make(chan struct{})
 	sh := make(chan os.Signal, 1)
 	signal.Notify(sh,

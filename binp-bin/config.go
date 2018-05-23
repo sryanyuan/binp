@@ -16,8 +16,11 @@ import (
 // AppConfig is the config of binp
 type AppConfig struct {
 	DataSource mconn.ReplicationConfig `json:"data-source" toml:"data-source"`
+	Tos        []mconn.DBConfig        `json:"tos" tos:"tos"`
 	Log        LogConfig               `json:"log" toml:"log"`
 	SRule      rule.DefaultSyncConfig  `json:"sync-rule" toml:"sync-rule"`
+	// Storage source, support local (start with prefix ls: )
+	StorageSource string `json:"storage-source" toml:"storage-source"`
 }
 
 func (c *AppConfig) fromFile(cpath string) error {

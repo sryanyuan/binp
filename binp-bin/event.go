@@ -2,24 +2,79 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/juju/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/sryanyuan/binp/binlog"
+	"github.com/sryanyuan/binp/mconn"
 	"github.com/sryanyuan/binp/slave"
+	"github.com/sryanyuan/binp/storage"
 )
 
 // EventHandler receives the binlog from master and handle it
 type EventHandler struct {
-	slv *slave.Slave
+	slv  *slave.Slave
+	cfg  *AppConfig
+	strw *storageReaderWriter
+
+	fromDB *sql.DB
+	toDBs  []*sql.DB
 }
 
 // NewEventHandler create a event handler
-func NewEventHandler(s *slave.Slave) *EventHandler {
+func NewEventHandler(s *slave.Slave, cfg *AppConfig) *EventHandler {
 	return &EventHandler{
 		slv: s,
+		cfg: cfg,
 	}
+}
+
+// Prepare do initialize work
+func (e *EventHandler) Prepare() error {
+	// Using local storage by default
+	if len(e.cfg.StorageSource) < 2 {
+		return errors.Errorf("Invalid storage source %s", e.cfg.StorageSource)
+	}
+	index := strings.IndexByte(e.cfg.StorageSource, ':')
+	if index < 0 || index >= len(e.cfg.StorageSource)-1 {
+		return errors.Errorf("Invalid storage source %s", e.cfg.StorageSource)
+	}
+	stype := strings.ToLower(e.cfg.StorageSource[:index])
+	svalue := e.cfg.StorageSource[index+1:]
+
+	switch stype {
+	case storage.LocalStorageSignature:
+		{
+			st, err := storage.NewLocalStorage(svalue)
+			if nil != err {
+				return errors.Trace(err)
+			}
+			e.strw = newStorageReaderWriter(st)
+		}
+	default:
+		{
+			return errors.Errorf("Unknown storage type %s", stype)
+		}
+	}
+
+	// Read the position from storage
+	var position mconn.Position
+	err := e.strw.readPosition(&position)
+	if nil != err {
+		if err != errStorageKeyNotFound {
+			return errors.Trace(err)
+		}
+	}
+
+	// Start slave
+	if err := e.slv.Start(position); nil != err {
+		return errors.Trace(err)
+	}
+
+	return nil
 }
 
 // Close closes the event handler and stop the slave
@@ -51,6 +106,8 @@ func (e *EventHandler) handleEvent() error {
 }
 
 func (e *EventHandler) onBinlogEvent(event *binlog.Event) error {
+	var err error
+
 	switch event.Header.EventType {
 	case binlog.FormatDescriptionEventType:
 		{
@@ -72,6 +129,9 @@ func (e *EventHandler) onBinlogEvent(event *binlog.Event) error {
 		{
 			evt := event.Payload.Rows
 			logrus.Debugf("%v", evt)
+			if err = e.onRowsEvent(event); nil != err {
+				return errors.Trace(err)
+			}
 		}
 	case binlog.GTIDEventType:
 		{

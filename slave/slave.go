@@ -83,7 +83,7 @@ func (s *Slave) Start(pos mconn.Position) error {
 		return errors.New("slave already working")
 	}
 
-	s.currentPos = s.config.Pos
+	s.currentPos = pos
 	logrus.Infof("Start sync from %v:%v(%v)",
 		s.currentPos.Filename, s.currentPos.Offset, s.currentPos.Gtid)
 	err := s.prepare()
