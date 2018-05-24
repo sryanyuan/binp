@@ -15,9 +15,19 @@ type ColumnInfo struct {
 
 // TableInfo hold column info
 type TableInfo struct {
-	Schema  string
-	Name    string
-	Columns []*ColumnInfo
+	Schema       string
+	Name         string
+	Columns      []*ColumnInfo
+	IndexColumns []*ColumnInfo
+}
+
+func findColumnByName(cols []*ColumnInfo, cname string) *ColumnInfo {
+	for _, v := range cols {
+		if v.Name == cname {
+			return v
+		}
+	}
+	return nil
 }
 
 func convertUnsigned(v interface{}, unsigned bool) interface{} {

@@ -15,10 +15,11 @@ import (
 
 // AppConfig is the config of binp
 type AppConfig struct {
-	DataSource mconn.ReplicationConfig `json:"data-source" toml:"data-source"`
-	Tos        []mconn.DBConfig        `json:"tos" tos:"tos"`
-	Log        LogConfig               `json:"log" toml:"log"`
-	SRule      rule.DefaultSyncConfig  `json:"sync-rule" toml:"sync-rule"`
+	DataSource  mconn.ReplicationConfig `json:"data-source" toml:"data-source"`
+	Tos         []mconn.DBConfig        `json:"tos" toml:"tos"`
+	WorkerCount int                     `json:"worker-count" toml:"worker-count"`
+	Log         LogConfig               `json:"log" toml:"log"`
+	SRule       rule.DefaultSyncConfig  `json:"sync-rule" toml:"sync-rule"`
 	// Storage source, support local (start with prefix ls: )
 	StorageSource string `json:"storage-source" toml:"storage-source"`
 }

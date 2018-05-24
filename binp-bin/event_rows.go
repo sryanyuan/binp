@@ -12,19 +12,19 @@ func (e *EventHandler) onRowsEvent(evt *binlog.Event) error {
 	}
 
 	switch revt.Action {
-	case binlog.WriteRowsEventV0Type, binlog.WriteRowsEventV1Type, binlog.WriteRowsEventV2Type:
+	case binlog.RowWrite:
 		{
 			if err := e.onWriteRowsEvent(evt); nil != err {
 				return errors.Trace(err)
 			}
 		}
-	case binlog.UpdateRowsEventV0Type, binlog.UpdateRowsEventV1Type, binlog.UpdateRowsEventV2Type:
+	case binlog.RowUpdate:
 		{
 			if err := e.onUpdateRowsEvent(evt); nil != err {
 				return errors.Trace(err)
 			}
 		}
-	case binlog.DeleteRowsEventV0Type, binlog.DeleteRowsEventV1Type, binlog.DeleteRowsEventV2Type:
+	case binlog.RowDelete:
 		{
 			if err := e.onDeleteRowsEvent(evt); nil != err {
 				return errors.Trace(err)
@@ -39,6 +39,23 @@ func (e *EventHandler) onRowsEvent(evt *binlog.Event) error {
 }
 
 func (e *EventHandler) onWriteRowsEvent(evt *binlog.Event) error {
+	revt := evt.Payload.Rows
+	ti, err := e.getTable(revt.Table.SchemaName, revt.Table.TableName, revt.Rule)
+	if nil != err {
+		return errors.Trace(err)
+	}
+
+	for _, row := range revt.Rows {
+		var job execJob
+		job.action = revt.Action
+		job.timestamp = evt.Header.Timestamp
+		job.row = row
+		job.table = ti
+		if err := e.wmgr.dispatchJob(&job); nil != err {
+			return errors.Trace(err)
+		}
+	}
+
 	return nil
 }
 

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sryanyuan/binp/rule"
+
 	"github.com/juju/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/sryanyuan/binp/binlog"
@@ -16,24 +18,27 @@ import (
 
 // EventHandler receives the binlog from master and handle it
 type EventHandler struct {
-	slv  *slave.Slave
-	cfg  *AppConfig
-	strw *storageReaderWriter
+	slv    *slave.Slave
+	cfg    *AppConfig
+	strw   *storageReaderWriter
+	wmgr   *workerManager
+	tables map[string]*TableInfo
 
 	fromDB *sql.DB
-	toDBs  []*sql.DB
 }
 
 // NewEventHandler create a event handler
 func NewEventHandler(s *slave.Slave, cfg *AppConfig) *EventHandler {
 	return &EventHandler{
-		slv: s,
-		cfg: cfg,
+		slv:    s,
+		cfg:    cfg,
+		tables: make(map[string]*TableInfo),
 	}
 }
 
 // Prepare do initialize work
 func (e *EventHandler) Prepare() error {
+	var err error
 	// Using local storage by default
 	if len(e.cfg.StorageSource) < 2 {
 		return errors.Errorf("Invalid storage source %s", e.cfg.StorageSource)
@@ -60,17 +65,34 @@ func (e *EventHandler) Prepare() error {
 		}
 	}
 
+	// Initialize mysql master connection and destination workers
+	sourceConfig := e.cfg.DataSource.DBConfig
+	sourceConfig.Type = "mysql"
+	e.fromDB, err = dbFromDBConfig(&sourceConfig)
+	if nil != err {
+		return errors.Annotate(err, "Create mysql master connection failed")
+	}
+	e.wmgr, err = newWorkerManager(e.cfg)
+	if nil != err {
+		return errors.Annotate(err, "Create worker manager failed")
+	}
+
 	// Read the position from storage
 	var position mconn.Position
-	err := e.strw.readPosition(&position)
+	err = e.strw.readPosition(&position)
 	if nil != err {
 		if err != errStorageKeyNotFound {
 			return errors.Trace(err)
 		}
 	}
 
+	// Start workers
+	if err = e.wmgr.start(); nil != err {
+		return errors.Trace(err)
+	}
+
 	// Start slave
-	if err := e.slv.Start(position); nil != err {
+	if err = e.slv.Start(position); nil != err {
 		return errors.Trace(err)
 	}
 
@@ -81,6 +103,8 @@ func (e *EventHandler) Prepare() error {
 func (e *EventHandler) Close() error {
 	// Close the slave
 	e.slv.Stop()
+	// Stop workers
+	e.wmgr.stop()
 	return nil
 }
 
@@ -145,4 +169,57 @@ func (e *EventHandler) onBinlogEvent(event *binlog.Event) error {
 		}
 	}
 	return nil
+}
+
+func (e *EventHandler) getTable(schema string, table string, desc *rule.SyncDesc) (*TableInfo, error) {
+	var err error
+	key := getTableKey(schema, table)
+	ti, ok := e.tables[key]
+	if !ok {
+		// Load table information from master
+		var tbl TableInfo
+		tbl.Schema = schema
+		tbl.Name = table
+
+		err = getTableColumnInfo(e.fromDB, schema, table, &tbl)
+		if nil != err {
+			return nil, errors.Trace(err)
+		}
+		err = getTableIndexInfo(e.fromDB, schema, table, &tbl)
+		if nil != err {
+			return nil, errors.Trace(err)
+		}
+
+		// Handle table info with sync desc
+		tbl.IndexColumns = make([]*ColumnInfo, 0, len(tbl.Columns))
+		for _, col := range tbl.Columns {
+			if col.HasIndex {
+				tbl.IndexColumns = append(tbl.IndexColumns, col)
+			}
+		}
+		if nil != desc {
+			if desc.IndexKeys != nil {
+				for _, ik := range desc.IndexKeys {
+					col := findColumnByName(tbl.Columns, ik)
+					if nil == col {
+						return nil, errors.Errorf("Can't find column %s by sync desc, table = %s",
+							ik, key)
+					}
+					tbl.IndexColumns = append(tbl.IndexColumns, col)
+				}
+			}
+		}
+		if len(tbl.IndexColumns) == 0 {
+			return nil, errors.Errorf("Table %s missing index key", key)
+		}
+
+		ti = &tbl
+		e.tables[key] = ti
+	}
+
+	return ti, nil
+}
+
+func (e *EventHandler) cleanTable(schema string, table string) {
+	delete(e.tables, getTableKey(schema, table))
 }
