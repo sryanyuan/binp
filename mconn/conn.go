@@ -47,6 +47,7 @@ func (i *HandshakeInfo) String() string {
 
 // Conn is a connection communicate with the mysql server
 type Conn struct {
+	ds         *DataSource
 	mu         sync.Mutex
 	status     int64
 	lastErr    error
@@ -56,7 +57,7 @@ type Conn struct {
 	capability uint32
 	loc        *time.Location
 	si         HandshakeInfo
-	cfg        *ReplicationConfig
+	rc         *ReplicationConfig
 	// TODO: support tls
 	tlsConfig *tls.Config
 }
@@ -107,15 +108,16 @@ func (c *Conn) close() {
 }
 
 // Connect connects to the mysql server
-func (c *Conn) Connect(host string, port uint16, username, password, database string) error {
+func (c *Conn) Connect(ds *DataSource, database string) error {
 	c.mu.Lock()
+	c.ds = ds
 	if c.status == connStatusConnected {
 		c.mu.Unlock()
 		return errors.New("already connected")
 	}
 
 	// Create connection
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", host, port), time.Second*10)
+	conn, err := net.DialTimeout("tcp", ds.Address(), time.Second*10)
 	if nil != err {
 		c.mu.Unlock()
 		return errors.Trace(err)
@@ -126,7 +128,7 @@ func (c *Conn) Connect(host string, port uint16, username, password, database st
 	c.status = connStatusConnected
 
 	// Receive handshake from server
-	if err = c.handshake(username, password, database); nil != err {
+	if err = c.handshake(ds.Username, ds.Password, database); nil != err {
 		c.close()
 		c.mu.Unlock()
 		return errors.Trace(err)

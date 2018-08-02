@@ -1,10 +1,24 @@
 package mconn
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/juju/errors"
 )
+
+// DataSource is a mysql instance to pull binlog stream
+type DataSource struct {
+	Host     string `json:"host" toml:"host"`
+	Port     uint16 `json:"port" toml:"port"`
+	Username string `json:"username" toml:"username"`
+	Password string `json:"password" toml:"password"`
+}
+
+// Address returns the address of the data source
+func (s *DataSource) Address() string {
+	return fmt.Sprintf("%s:%d", s.Host, s.Port)
+}
 
 // DBConfig is the connection information to db server
 type DBConfig struct {
@@ -18,7 +32,6 @@ type DBConfig struct {
 
 // ReplicationConfig specify the master information
 type ReplicationConfig struct {
-	DBConfig
 	SlaveID uint32 `json:"slave-id" toml:"slave-id"`
 	//Pos             Position `json:"position" toml:"position"`
 	EnableGtid      bool `json:"enable-gtid" toml:"enable-gtid"`
@@ -35,8 +48,8 @@ type Position struct {
 }
 
 // RegisterSlave register the connection as a slave connection
-func (c *Conn) RegisterSlave(cfg *ReplicationConfig) error {
-	c.cfg = cfg
+func (c *Conn) RegisterSlave(rc *ReplicationConfig) error {
+	c.rc = rc
 	// Write register command
 	if err := c.sendRegistgerSlaveCommand(); nil != err {
 		return err
@@ -55,9 +68,9 @@ func (c *Conn) sendRegistgerSlaveCommand() error {
 	var prs PacketRegisterSlave
 	prs.Hostname, _ = os.Hostname()
 
-	prs.ServerID = uint32(c.cfg.SlaveID)
-	prs.User = c.cfg.Username
-	prs.Password = c.cfg.Password
+	prs.ServerID = uint32(c.rc.SlaveID)
+	prs.User = c.ds.Username
+	prs.Password = c.ds.Password
 
 	data, err := prs.Encode()
 	if nil != err {
@@ -75,7 +88,7 @@ func (c *Conn) sendRegistgerSlaveCommand() error {
 func (c *Conn) StartDumpBinlog(pos Position) error {
 	var err error
 
-	if c.cfg.EnableGtid {
+	if c.rc.EnableGtid {
 		return errors.New("Gtid replication not support now")
 	}
 
@@ -92,7 +105,7 @@ func (c *Conn) sendBinlogDumpCommand(pos Position) error {
 	var pbd PacketBinlogDump
 	pbd.BinlogPos = pos.Offset
 	pbd.BinlogFile = pos.Filename
-	pbd.ServerID = uint32(c.cfg.SlaveID)
+	pbd.ServerID = uint32(c.rc.SlaveID)
 	// Just one flag:
 	// Description
 	// 0x01 BINLOG_DUMP_NON_BLOCK

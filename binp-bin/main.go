@@ -62,7 +62,7 @@ func main() {
 		return
 	}
 
-	slv := slave.NewSlave(&config.DataSource, sr)
+	slv := slave.NewSlave(config.DataSources, &config.Replication, sr)
 	handler := NewEventHandler(slv, &config)
 	if err = handler.Prepare(); nil != err {
 		logrus.Errorf(errors.Details(err))

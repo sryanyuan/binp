@@ -46,7 +46,9 @@ type Slave struct {
 	cancelFn   context.CancelFunc
 	wg         sync.WaitGroup
 	mu         sync.Mutex
-	config     *mconn.ReplicationConfig
+	dss        []mconn.DataSource
+	dsi        int64
+	rc         *mconn.ReplicationConfig
 	status     int64
 	currentPos mconn.Position
 	eq         *eventQueue
@@ -57,17 +59,18 @@ type Slave struct {
 }
 
 // NewSlave creates a new slave
-func NewSlave(cfg *mconn.ReplicationConfig, srule rule.ISyncRule) *Slave {
+func NewSlave(dss []mconn.DataSource, rc *mconn.ReplicationConfig, srule rule.ISyncRule) *Slave {
 	sl := &Slave{}
 	// Create parser
 	sl.parser = binlog.NewParser()
 	sl.parser.SetSyncRule(srule)
 	sl.cancelCtx, sl.cancelFn = context.WithCancel(context.Background())
-	sl.config = cfg
+	sl.rc = rc
+	sl.dss = dss
 	// Create event queue
 	queueBufferSize := defaultEventBufferSize
-	if 0 != cfg.EventBufferSize {
-		queueBufferSize = cfg.EventBufferSize
+	if 0 != rc.EventBufferSize {
+		queueBufferSize = rc.EventBufferSize
 	}
 	sl.eq = newEventQueue(queueBufferSize)
 
@@ -81,6 +84,10 @@ func (s *Slave) Start(pos mconn.Position) error {
 
 	if atomic.LoadInt64(&s.status) != slaveStatusNone {
 		return errors.New("slave already working")
+	}
+
+	if nil == s.dss || 0 == len(s.dss) {
+		return errors.New("Empty data source")
 	}
 
 	s.currentPos = pos
@@ -221,6 +228,25 @@ func (s *Slave) adjustBinlogChecksum() error {
 	return nil
 }
 
+func (s *Slave) nextDataSource() {
+	atomic.AddInt64(&s.dsi, 1)
+}
+
+// GetDataSourceIndex get the current data source index used by replication replication
+func (s *Slave) GetDataSourceIndex() int {
+	return int(atomic.LoadInt64(&s.dsi))
+}
+
+// GetDataSource get the current data source used by replication replication
+func (s *Slave) GetDataSource() *mconn.DataSource {
+	return s.getDataSource()
+}
+
+func (s *Slave) getDataSource() *mconn.DataSource {
+	cur := int(atomic.LoadInt64(&s.dsi))
+	return &s.dss[cur%len(s.dss)]
+}
+
 func (s *Slave) registerSlave() error {
 	if s.conn != nil {
 		s.conn.Close()
@@ -229,13 +255,14 @@ func (s *Slave) registerSlave() error {
 	var err error
 
 	// Connect to mysql
+	ds := s.getDataSource()
 	s.conn = &mconn.Conn{}
-	err = s.conn.Connect(s.config.Host, s.config.Port, s.config.Username, s.config.Password, "")
+	err = s.conn.Connect(ds, "")
 	if nil != err {
 		return errors.Trace(err)
 	}
 	s.conn.GetHandshakeInfo(&s.si)
-	logrus.Infof("Connect to mysql %v:%v success", s.config.Host, s.config.Port)
+	logrus.Infof("Connect to mysql %s success", ds.Address())
 	logrus.Infof("Master status: %v", &s.si)
 
 	// Is mariadb ?
@@ -244,13 +271,13 @@ func (s *Slave) registerSlave() error {
 	}
 
 	// Set keepalive period
-	if s.config.KeepAlivePeriod != 0 {
-		if s.conn.SetKeepalive(time.Second * time.Duration(s.config.KeepAlivePeriod)) {
+	if s.rc.KeepAlivePeriod != 0 {
+		if s.conn.SetKeepalive(time.Second * time.Duration(s.rc.KeepAlivePeriod)) {
 			logrus.Infof("Update mysql connection keepalive time to %v seconds success",
-				s.config.KeepAlivePeriod)
+				s.rc.KeepAlivePeriod)
 		} else {
 			logrus.Infof("Update mysql connection keepalive time to %v seconds failed",
-				s.config.KeepAlivePeriod)
+				s.rc.KeepAlivePeriod)
 		}
 	}
 
@@ -268,7 +295,7 @@ func (s *Slave) registerSlave() error {
 	}
 
 	// Register slave
-	if err = s.conn.RegisterSlave(s.config); nil != err {
+	if err = s.conn.RegisterSlave(s.rc); nil != err {
 		return errors.Trace(err)
 	}
 
@@ -372,7 +399,7 @@ func (s *Slave) onPumpBinlogConnectionError() error {
 		case <-time.After(time.Second):
 			{
 				// Retry sync
-				if s.config.EnableGtid {
+				if s.rc.EnableGtid {
 					// If using gtid, empty gtid is allowed
 				} else {
 					if s.currentPos.Filename == "" {

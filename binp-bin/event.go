@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sryanyuan/binp/observer"
 	"github.com/sryanyuan/binp/rule"
 
 	"github.com/juju/errors"
@@ -23,8 +24,9 @@ type EventHandler struct {
 	strw   *storageReaderWriter
 	wmgr   *workerManager
 	tables map[string]*TableInfo
+	nchain *observer.NotifyChain
 
-	fromDB *sql.DB
+	fromDBs []*sql.DB
 }
 
 // NewEventHandler create a event handler
@@ -33,12 +35,17 @@ func NewEventHandler(s *slave.Slave, cfg *AppConfig) *EventHandler {
 		slv:    s,
 		cfg:    cfg,
 		tables: make(map[string]*TableInfo),
+		nchain: &observer.NotifyChain{},
 	}
 }
 
 // Prepare do initialize work
 func (e *EventHandler) Prepare() error {
 	var err error
+	// Check data source count
+	if nil == e.cfg.DataSources || 0 == len(e.cfg.DataSources) {
+		return errors.New("Empty data source")
+	}
 	// Using local storage by default
 	if len(e.cfg.StorageSource) < 2 {
 		return errors.Errorf("Invalid storage source %s", e.cfg.StorageSource)
@@ -66,12 +73,22 @@ func (e *EventHandler) Prepare() error {
 	}
 
 	// Initialize mysql master connection and destination workers
-	sourceConfig := e.cfg.DataSource.DBConfig
-	sourceConfig.Type = "mysql"
-	e.fromDB, err = dbFromDBConfig(&sourceConfig)
-	if nil != err {
-		return errors.Annotate(err, "Create mysql master connection failed")
+	e.fromDBs = make([]*sql.DB, 0, len(e.cfg.DataSources))
+	for i := range e.cfg.DataSources {
+		ds := &e.cfg.DataSources[i]
+		var sourceConfig mconn.DBConfig
+		sourceConfig.Host = ds.Host
+		sourceConfig.Port = ds.Port
+		sourceConfig.Username = ds.Username
+		sourceConfig.Password = ds.Password
+		sourceConfig.Type = "mysql"
+		fromDB, err := dbFromDBConfig(&sourceConfig)
+		if nil != err {
+			return errors.Annotate(err, "Create mysql master connection failed")
+		}
+		e.fromDBs = append(e.fromDBs, fromDB)
 	}
+
 	e.wmgr, err = newWorkerManager(e.cfg)
 	if nil != err {
 		return errors.Annotate(err, "Create worker manager failed")
@@ -132,6 +149,9 @@ func (e *EventHandler) handleEvent() error {
 func (e *EventHandler) onBinlogEvent(event *binlog.Event) error {
 	var err error
 
+	// Here we interest is to record the current replication point(position or gtid)
+	// and filter event we do not interested. Column filter and rewrite will also processed here.
+	// Other process should be in observers
 	switch event.Header.EventType {
 	case binlog.FormatDescriptionEventType:
 		{
@@ -168,6 +188,10 @@ func (e *EventHandler) onBinlogEvent(event *binlog.Event) error {
 			logrus.Debugf("%v", evt)
 		}
 	}
+
+	if err = e.nchain.Broadcast(event); nil != err {
+		return errors.Trace(err)
+	}
 	return nil
 }
 
@@ -180,12 +204,12 @@ func (e *EventHandler) getTable(schema string, table string, desc *rule.SyncDesc
 		var tbl TableInfo
 		tbl.Schema = schema
 		tbl.Name = table
-
-		err = getTableColumnInfo(e.fromDB, schema, table, &tbl)
+		// TODO: If get information failed, retry and switch data source(Master slave switch)
+		err = getTableColumnInfo(e.fromDBs[e.slv.GetDataSourceIndex()], schema, table, &tbl)
 		if nil != err {
 			return nil, errors.Trace(err)
 		}
-		err = getTableIndexInfo(e.fromDB, schema, table, &tbl)
+		err = getTableIndexInfo(e.fromDBs[e.slv.GetDataSourceIndex()], schema, table, &tbl)
 		if nil != err {
 			return nil, errors.Trace(err)
 		}

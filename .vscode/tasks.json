@@ -13,6 +13,18 @@
     },
     "tasks": [
         {
+            "taskName": "build_binp",
+            "isBuildCommand": true,
+			"suppressTaskName": true,
+            "args": [
+				"tasks",
+                "${workspaceRoot}/../../../../",
+                "${workspaceRoot}/binp-bin",
+				"build"
+            ],
+            "isBackground": false
+        },
+        {
             "taskName": "build",
             "isBuildCommand": true,
 			"suppressTaskName": true,
@@ -22,20 +34,7 @@
                 "${fileDirname}",
 				"build"
             ],
-            "isWatching": false,
-            "problemMatcher1": {
-                "owner": "go",
-                "fileLocation": [
-                    "relative",
-                    "${fileDirname}"
-                ],
-                "pattern": {
-                    "regexp": "^(.*):(\\d+):\\s+(.*)$",
-                    "file":1,
-                    "line": 2,
-                    "message": 3
-                }
-            }
+            "isBackground": false
         },
         {
             "taskName": "install",
@@ -46,20 +45,7 @@
                 "${fileDirname}",
 				"install"
             ],
-            "isWatching": false,
-            "problemMatcher1": {
-                "owner": "go",
-                "fileLocation": [
-                    "relative",
-                    "${fileDirname}"
-                ],
-                "pattern": {
-                    "regexp": "^(.*):(\\d+):\\s+(.*)$",
-                    "file":1,
-                    "line": 2,
-                    "message": 3
-                }
-            }
+            "isBackground": false
         }
     ]
 }

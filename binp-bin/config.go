@@ -15,7 +15,8 @@ import (
 
 // AppConfig is the config of binp
 type AppConfig struct {
-	DataSource  mconn.ReplicationConfig `json:"data-source" toml:"data-source"`
+	DataSources []mconn.DataSource      `json:"data-sources" toml:"data-sources"`
+	Replication mconn.ReplicationConfig `json:"replication" toml:"replication"`
 	Tos         []mconn.DBConfig        `json:"tos" toml:"tos"`
 	WorkerCount int                     `json:"worker-count" toml:"worker-count"`
 	Log         LogConfig               `json:"log" toml:"log"`
