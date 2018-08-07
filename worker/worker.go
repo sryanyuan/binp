@@ -57,7 +57,7 @@ func (w *worker) start(wg *sync.WaitGroup, wqsz, wqintv int) error {
 	w.wg = wg
 	w.jobCh = make(chan *WorkerEvent, workerJobChanSize)
 	w.wq = newWorkerQueue(wqsz)
-	w.lastCommitTm = time.Now().Unix()
+	w.lastCommitTm = time.Now().UnixNano() / 1e6
 	w.commitInterval = int64(wqintv)
 
 	w.wg.Add(1)
@@ -108,7 +108,7 @@ func (w *worker) loop() {
 					// Time back
 					w.lastCommitTm = tms
 				}
-				if w.lastCommitTm-tms > w.commitInterval &&
+				if tms-w.lastCommitTm > w.commitInterval &&
 					w.wq.size() > 0 {
 					// Do commit job
 					if err = w.commitQueue(); nil != err {
