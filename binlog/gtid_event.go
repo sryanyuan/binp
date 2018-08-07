@@ -5,7 +5,7 @@ import (
 
 	"github.com/juju/errors"
 	uuid "github.com/satori/go.uuid"
-	"github.com/sryanyuan/binp/utils"
+	"github.com/sryanyuan/binp/serialize"
 )
 
 // GTIDEvent sees below
@@ -18,7 +18,7 @@ type GTIDEvent struct {
 
 // Decode decodes the binary data into payload
 func (e *GTIDEvent) Decode(data []byte) error {
-	r := utils.NewBinReader(data)
+	r := serialize.NewBinReader(data)
 	var err error
 	e.CommitFlag, err = r.ReadUint8()
 	if nil != err {

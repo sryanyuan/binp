@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/juju/errors"
-	"github.com/sryanyuan/binp/utils"
+	"github.com/sryanyuan/binp/serialize"
 )
 
 // MariadbGTIDEvent no document ...
@@ -17,7 +17,7 @@ type MariadbGTIDEvent struct {
 // Decode decodes the binary data into payload
 func (e *MariadbGTIDEvent) Decode(data []byte) error {
 	var err error
-	r := utils.NewBinReader(data)
+	r := serialize.NewBinReader(data)
 
 	e.SequenceNumber, err = r.ReadUint32()
 	if nil != err {

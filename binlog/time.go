@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/juju/errors"
-	"github.com/sryanyuan/binp/utils"
+	"github.com/sryanyuan/binp/serialize"
 )
 
 const (
@@ -23,7 +23,7 @@ func formatZeroTime(frac int, dec int) string {
 	return s[0 : len(s)-(6-dec)]
 }
 
-func decodeTime(r *utils.BinReader) (interface{}, error) {
+func decodeTime(r *serialize.BinReader) (interface{}, error) {
 	v, err := r.ReadUint32()
 	if nil != err {
 		return nil, errors.Trace(err)
@@ -35,7 +35,7 @@ func decodeTime(r *utils.BinReader) (interface{}, error) {
 }
 
 // github.com/siddontang/go-mysql/replication/row_event.go
-func decodeTime2(r *utils.BinReader, meta uint16) (interface{}, error) {
+func decodeTime2(r *serialize.BinReader, meta uint16) (interface{}, error) {
 	tmp := int64(0)
 	intPart := int64(0)
 	frac := int64(0)
@@ -45,7 +45,7 @@ func decodeTime2(r *utils.BinReader, meta uint16) (interface{}, error) {
 		if nil != err {
 			return nil, errors.Trace(err)
 		}
-		intPart = int64(utils.NumberFromBytesBigEndian(v)) - timefOfs
+		intPart = int64(serialize.NumberFromBytesBigEndian(v)) - timefOfs
 		v, err = r.ReadBytes(1)
 		if nil != err {
 			return nil, errors.Trace(err)
@@ -78,7 +78,7 @@ func decodeTime2(r *utils.BinReader, meta uint16) (interface{}, error) {
 		if nil != err {
 			return nil, errors.Trace(err)
 		}
-		intPart = int64(utils.NumberFromBytesBigEndian(v)) - timefOfs
+		intPart = int64(serialize.NumberFromBytesBigEndian(v)) - timefOfs
 		v, err = r.ReadBytes(2)
 		if nil != err {
 			return nil, errors.Trace(err)
@@ -98,14 +98,14 @@ func decodeTime2(r *utils.BinReader, meta uint16) (interface{}, error) {
 		if nil != err {
 			return nil, errors.Trace(err)
 		}
-		tmp = int64(utils.NumberFromBytesBigEndian(v)) - timefOfs
+		tmp = int64(serialize.NumberFromBytesBigEndian(v)) - timefOfs
 		return TimeStringFromInt64TimePacked(tmp), nil
 	default:
 		v, err := r.ReadBytes(3)
 		if nil != err {
 			return nil, errors.Trace(err)
 		}
-		intPart = int64(utils.NumberFromBytesBigEndian(v)) - timefOfs
+		intPart = int64(serialize.NumberFromBytesBigEndian(v)) - timefOfs
 		tmp = intPart << 24
 	}
 

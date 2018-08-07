@@ -5,14 +5,14 @@ import (
 	"time"
 
 	"github.com/juju/errors"
-	"github.com/sryanyuan/binp/utils"
+	"github.com/sryanyuan/binp/serialize"
 )
 
 const (
 	datetimefIntIfs int64 = 0x8000000000
 )
 
-func decodeDatetime(r *utils.BinReader) (interface{}, error) {
+func decodeDatetime(r *serialize.BinReader) (interface{}, error) {
 	v, err := r.ReadUint64()
 	if nil != err {
 		return nil, errors.Trace(err)
@@ -30,12 +30,12 @@ func decodeDatetime(r *utils.BinReader) (interface{}, error) {
 }
 
 // github.com/siddontang/go-mysql/replication/row_event.go
-func decodeDatetime2(r *utils.BinReader, meta uint16) (interface{}, error) {
+func decodeDatetime2(r *serialize.BinReader, meta uint16) (interface{}, error) {
 	bv, err := r.ReadBytes(5)
 	if nil != err {
 		return nil, errors.Trace(err)
 	}
-	intPart := int64(utils.NumberFromBytesBigEndian(bv)) - datetimefIntIfs
+	intPart := int64(serialize.NumberFromBytesBigEndian(bv)) - datetimefIntIfs
 	var frac int64
 
 	switch meta {
@@ -50,13 +50,13 @@ func decodeDatetime2(r *utils.BinReader, meta uint16) (interface{}, error) {
 		if nil != err {
 			return nil, errors.Trace(err)
 		}
-		frac = int64(utils.NumberFromBytesBigEndian(bv)) * 100
+		frac = int64(serialize.NumberFromBytesBigEndian(bv)) * 100
 	case 5, 6:
 		bv, err = r.ReadBytes(3)
 		if nil != err {
 			return nil, errors.Trace(err)
 		}
-		frac = int64(utils.NumberFromBytesBigEndian(bv))
+		frac = int64(serialize.NumberFromBytesBigEndian(bv))
 	}
 
 	if intPart == 0 {

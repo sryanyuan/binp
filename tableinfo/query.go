@@ -1,20 +1,27 @@
-package main
+package tableinfo
 
-/*func getTableKey(schema string, table string) string {
-	return fmt.Sprintf("%s.%s", schema, table)
-}
+import (
+	"database/sql"
+	"fmt"
+	"strings"
 
-func getTableInfo(db *sql.DB, schema string, table string) (*TableInfo, error) {
+	"github.com/juju/errors"
+	"github.com/sirupsen/logrus"
+)
+
+// GetTableInfo get table info from database
+func GetTableInfo(db *sql.DB, schema string, table string) (*TableInfo, error) {
 	ti := &TableInfo{}
 	// Get table column info
-	if err := getTableColumnInfo(db, schema, table, ti); nil != err {
+	if err := ti.GetTableColumnInfo(db, schema, table); nil != err {
 		return nil, errors.Trace(err)
 	}
 
 	return ti, nil
 }
 
-func getTableColumnInfo(db *sql.DB, schema string, table string, ti *TableInfo) error {
+// GetTableColumnInfo get columns info from database
+func (ti *TableInfo) GetTableColumnInfo(db *sql.DB, schema string, table string) error {
 	rs, err := retryQuery(db, fmt.Sprintf("SHOW COLUMNS FROM %s.%s", schema, table))
 	if nil != err {
 		return errors.Trace(err)
@@ -64,8 +71,8 @@ func getTableColumnInfo(db *sql.DB, schema string, table string, ti *TableInfo) 
 	return nil
 }
 
-// Get all primary keys
-func getTablePrimaryKeys(db *sql.DB, schema string, table string, ti *TableInfo) error {
+// GetTablePrimaryKeys get all primary keys
+func (ti *TableInfo) GetTablePrimaryKeys(db *sql.DB, schema string, table string) error {
 	rs, err := retryQuery(db, fmt.Sprintf("SHOW INDEX FROM %s.%s", schema, table))
 	if nil != err {
 		return errors.Trace(err)
@@ -126,4 +133,3 @@ func retryQuery(db *sql.DB, stmt string) (*sql.Rows, error) {
 
 	return nil, errors.Errorf("Failed to query , stmt = %s, error = %v", stmt, err)
 }
-*/

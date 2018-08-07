@@ -2,7 +2,7 @@ package binlog
 
 import (
 	"github.com/juju/errors"
-	"github.com/sryanyuan/binp/utils"
+	"github.com/sryanyuan/binp/serialize"
 )
 
 // RowsQueryEvent sees below
@@ -13,7 +13,7 @@ type RowsQueryEvent struct {
 
 // Decode decodes the binary data into payload
 func (e *RowsQueryEvent) Decode(data []byte) error {
-	r := utils.NewBinReader(data)
+	r := serialize.NewBinReader(data)
 	// Skip one byte length
 	_, err := r.ReadUint8()
 	if nil != err {

@@ -5,7 +5,7 @@ import (
 
 	"github.com/juju/errors"
 	"github.com/sryanyuan/binp/mconn"
-	"github.com/sryanyuan/binp/utils"
+	"github.com/sryanyuan/binp/serialize"
 )
 
 // TableMapEvent event of TableMapEvent
@@ -24,7 +24,7 @@ type TableMapEvent struct {
 
 func (e *TableMapEvent) decodeColumnMetaDef(meta []byte) error {
 	var err error
-	mr := utils.NewBinReader(meta)
+	mr := serialize.NewBinReader(meta)
 	e.ColumnMeta = make([]uint16, e.ColumnCount)
 
 	for i, v := range e.ColumnDefine {
@@ -94,7 +94,7 @@ func (e *TableMapEvent) decodeColumnMetaDef(meta []byte) error {
 // Decode decodes the binary data into payload
 func (e *TableMapEvent) Decode(data []byte) error {
 	var err error
-	r := utils.NewBinReader(data)
+	r := serialize.NewBinReader(data)
 
 	if e.tableIDSize == 4 {
 		tid, err := r.ReadUint32()

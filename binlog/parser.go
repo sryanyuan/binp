@@ -6,7 +6,7 @@ import (
 	"github.com/juju/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/sryanyuan/binp/rule"
-	"github.com/sryanyuan/binp/utils"
+	"github.com/sryanyuan/binp/serialize"
 )
 
 // Parser parse the binlog event
@@ -279,7 +279,7 @@ func (p *Parser) preParseRowsEvent(event *Event, data []byte) ([]byte, error) {
 		evt.tableIDSize = 4
 	}
 	// Get table map event
-	r := utils.NewBinReader(data)
+	r := serialize.NewBinReader(data)
 	if 4 == evt.tableIDSize {
 		tid, err := r.ReadUint32()
 		if nil != err {

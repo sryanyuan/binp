@@ -2,7 +2,7 @@ package binlog
 
 import (
 	"github.com/juju/errors"
-	"github.com/sryanyuan/binp/utils"
+	"github.com/sryanyuan/binp/serialize"
 )
 
 // RotateEvent see below
@@ -14,7 +14,7 @@ type RotateEvent struct {
 
 // Decode decodes the binary data into payload
 func (e *RotateEvent) Decode(data []byte) error {
-	r := utils.NewBinReader(data)
+	r := serialize.NewBinReader(data)
 	var err error
 
 	e.Position, err = r.ReadUint64()

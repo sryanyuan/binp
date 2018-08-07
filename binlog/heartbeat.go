@@ -2,7 +2,7 @@ package binlog
 
 import (
 	"github.com/juju/errors"
-	"github.com/sryanyuan/binp/utils"
+	"github.com/sryanyuan/binp/serialize"
 )
 
 // HeartbeatEvent is sent by master if no more binlog produce
@@ -13,7 +13,7 @@ type HeartbeatEvent struct {
 
 // Decode decodes the binary data into payload
 func (e *HeartbeatEvent) Decode(data []byte) error {
-	r := utils.NewBinReader(data)
+	r := serialize.NewBinReader(data)
 	var err error
 	e.LogIdent, err = r.ReadEOFString()
 	if nil != err {

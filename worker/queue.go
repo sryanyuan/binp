@@ -1,21 +1,21 @@
-package main
+package worker
 
 // Not thread safe
 type workerQueue struct {
-	buf  []*execJob
+	buf  []*WorkerEvent
 	capa int
 	sz   int
 }
 
 func newWorkerQueue(sz int) *workerQueue {
 	q := &workerQueue{}
-	q.buf = make([]*execJob, 0, sz)
+	q.buf = make([]*WorkerEvent, 0, sz)
 	q.sz = 0
 	q.capa = sz
 	return q
 }
 
-func (q *workerQueue) push(job *execJob) {
+func (q *workerQueue) push(job *WorkerEvent) {
 	if q.sz >= q.capa {
 		panic("queue already full")
 	}
@@ -36,6 +36,6 @@ func (q *workerQueue) reset() {
 	q.buf = q.buf[0:0]
 }
 
-func (q *workerQueue) jobs() []*execJob {
+func (q *workerQueue) jobs() []*WorkerEvent {
 	return q.buf
 }

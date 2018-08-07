@@ -2,10 +2,10 @@ package binlog
 
 import (
 	"github.com/juju/errors"
-	"github.com/sryanyuan/binp/utils"
+	"github.com/sryanyuan/binp/serialize"
 )
 
-func decodeBit(r *utils.BinReader, bits uint16, length int) (uint64, error) {
+func decodeBit(r *serialize.BinReader, bits uint16, length int) (uint64, error) {
 	var value uint64
 
 	if bits <= 1 {
@@ -24,5 +24,5 @@ func decodeBit(r *utils.BinReader, bits uint16, length int) (uint64, error) {
 	if nil != err {
 		return 0, errors.Trace(err)
 	}
-	return utils.NumberFromBytesBigEndian(vd), nil
+	return serialize.NumberFromBytesBigEndian(vd), nil
 }

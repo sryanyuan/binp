@@ -2,10 +2,10 @@ package binlog
 
 import (
 	"github.com/juju/errors"
-	"github.com/sryanyuan/binp/utils"
+	"github.com/sryanyuan/binp/serialize"
 )
 
-func decodeBlob(r *utils.BinReader, meta uint16) (interface{}, error) {
+func decodeBlob(r *serialize.BinReader, meta uint16) (interface{}, error) {
 	var l int
 
 	switch meta {
@@ -54,7 +54,7 @@ func decodeBlob(r *utils.BinReader, meta uint16) (interface{}, error) {
 	return readBlob(r, l)
 }
 
-func readBlob(r *utils.BinReader, l int) (interface{}, error) {
+func readBlob(r *serialize.BinReader, l int) (interface{}, error) {
 	v, err := r.ReadBytes(l)
 	if nil != err {
 		return nil, errors.Trace(err)
@@ -62,7 +62,7 @@ func readBlob(r *utils.BinReader, l int) (interface{}, error) {
 	return v, nil
 }
 
-func decodeVarChar(r *utils.BinReader, meta uint16) (interface{}, error) {
+func decodeVarChar(r *serialize.BinReader, meta uint16) (interface{}, error) {
 	var l int
 
 	if meta < 256 {

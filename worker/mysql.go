@@ -1,4 +1,4 @@
-package main
+package worker
 
 import (
 	"database/sql"
@@ -7,7 +7,8 @@ import (
 
 	"github.com/juju/errors"
 	"github.com/ngaut/log"
-
+	"github.com/sryanyuan/binp/utils"
+	// Import mysql driver
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -22,6 +23,31 @@ type mysqlExecutor struct {
 	lastErr     error
 	lastErrTime int64
 	txn         *sql.Tx
+	valuesCache []interface{}
+}
+
+func init() {
+	registerExecutor("mysql", func(name string, dest *DestinationConfig) (IJobExecutor, error) {
+		if len(dest.DBs) == 0 {
+			return nil, errors.New("Empty db")
+		}
+
+		var executor mysqlExecutor
+
+		dbs := make([]*sql.DB, 0, len(dest.DBs))
+		for _, v := range dest.DBs {
+			v.Type = "mysql"
+			db, err := utils.CreateDB(v)
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			dbs = append(dbs, db)
+		}
+		if err := executor.Attach(dbs); nil != err {
+			return nil, errors.Trace(err)
+		}
+		return &executor, nil
+	})
 }
 
 func (e *mysqlExecutor) Attach(v interface{}) error {
@@ -103,7 +129,7 @@ func (e *mysqlExecutor) begin() error {
 	return err
 }
 
-func (e *mysqlExecutor) Exec(job *execJob) error {
+func (e *mysqlExecutor) Exec(job *WorkerEvent) error {
 	err := e.exec(job)
 	e.updateLastError(err)
 	if nil != err {
@@ -112,12 +138,19 @@ func (e *mysqlExecutor) Exec(job *execJob) error {
 	return nil
 }
 
-func (e *mysqlExecutor) exec(job *execJob) error {
+func (e *mysqlExecutor) exec(job *WorkerEvent) error {
 	if nil == e.txn {
 		return errors.New("Exec out of transaction")
 	}
+	if nil == e.valuesCache {
+		e.valuesCache = make([]interface{}, 0, len(job.Columns))
+	}
 	stmt := ""
-	_, err := e.txn.Exec(stmt, job.row.ColumnDatas...)
+	for _, v := range job.Columns {
+		e.valuesCache = append(e.valuesCache, v.Value)
+	}
+	_, err := e.txn.Exec(stmt, e.valuesCache...)
+	e.valuesCache = e.valuesCache[0:0]
 	return err
 }
 

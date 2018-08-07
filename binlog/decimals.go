@@ -10,7 +10,7 @@ import (
 	"strconv"
 
 	"github.com/juju/errors"
-	"github.com/sryanyuan/binp/utils"
+	"github.com/sryanyuan/binp/serialize"
 )
 
 const (
@@ -30,7 +30,7 @@ func decimalBinSize(precision int, scale int) int {
 	return intg0*4 + dig2bytes[intg0x] + frac0*4 + dig2bytes[frac0x]
 }
 
-func decodeDecimal(r *utils.BinReader, precision int, scale int) (float64, error) {
+func decodeDecimal(r *serialize.BinReader, precision int, scale int) (float64, error) {
 	intg := precision - scale
 	intg0 := intg / digPerDec1
 	frac0 := scale / digPerDec1
@@ -92,6 +92,6 @@ func decodeDecimalDecompressValue(compIndx int, data []byte, mask uint8) (size i
 	for i := 0; i < size; i++ {
 		databuff[i] = data[i] ^ mask
 	}
-	value = uint32(utils.NumberFromBytesBigEndian(databuff))
+	value = uint32(serialize.NumberFromBytesBigEndian(databuff))
 	return
 }

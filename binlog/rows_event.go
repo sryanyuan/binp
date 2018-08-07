@@ -9,7 +9,7 @@ import (
 
 	"github.com/juju/errors"
 	"github.com/sryanyuan/binp/mconn"
-	"github.com/sryanyuan/binp/utils"
+	"github.com/sryanyuan/binp/serialize"
 )
 
 // Rows event flags
@@ -52,7 +52,7 @@ func isBitSet(bitmap []byte, i int) bool {
 }
 
 // Reference to log_event_print_value (log_event.cc)
-func readValue(r *utils.BinReader, tp uint8, meta uint16) (interface{}, error) {
+func readValue(r *serialize.BinReader, tp uint8, meta uint16) (interface{}, error) {
 
 	switch tp {
 	case mconn.FieldTypeNull:
@@ -282,7 +282,7 @@ func readValue(r *utils.BinReader, tp uint8, meta uint16) (interface{}, error) {
 	//return nil, errors.Errorf("Unknown type %v", tp)
 }
 
-func (e *RowsEvent) readRow(r *utils.BinReader, mask []byte) (*Row, error) {
+func (e *RowsEvent) readRow(r *serialize.BinReader, mask []byte) (*Row, error) {
 	row := &Row{}
 	row.ColumnDatas = make([]interface{}, int(e.ColumnCount))
 	// Check how many column is presented
@@ -326,7 +326,7 @@ func (e *RowsEvent) readRow(r *utils.BinReader, mask []byte) (*Row, error) {
 // Decode decodes the binary data into payload
 func (e *RowsEvent) Decode(data []byte) error {
 	var err error
-	r := utils.NewBinReader(data)
+	r := serialize.NewBinReader(data)
 
 	// Table map event is fetched by parser, not here
 	/*if e.tableIDSize == 4 {

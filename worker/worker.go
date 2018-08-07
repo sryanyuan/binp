@@ -1,4 +1,4 @@
-package main
+package worker
 
 import (
 	"sync"
@@ -9,32 +9,39 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Dispatch policy
+const (
+	DispatchPolicyTableName = iota
+	DispatchPolicyPrimaryKey
+)
+
 const (
 	defaultWorkerQueueSize           = 20
 	defaultWorkerQueueCommitInterval = 200
 )
 
+// Worker status
 const (
-	workerStatusNone = iota
-	workerStatusRunning
-	workerStatusAbnormal
-	workerStatusExit
+	WorkerStatusNone = iota
+	WorkerStatusRunning
+	WorkerStatusAbnormal
+	WorkerStatusExit
 )
 
 type worker struct {
 	wid            int
 	wq             *workerQueue
-	executor       IJobExecutor
+	executors      []IJobExecutor
 	wg             *sync.WaitGroup
 	jobWg          *sync.WaitGroup
-	jobCh          chan *execJob
+	jobCh          chan *WorkerEvent
 	lastCommitTm   int64
 	commitInterval int64
 	status         int64
 }
 
 func (w *worker) start(wg *sync.WaitGroup, wqsz, wqintv int) error {
-	if nil == w.executor {
+	if nil == w.executors || 0 == len(w.executors) {
 		return errors.New("Executor is nil")
 	}
 	if nil == w.jobWg {
@@ -48,7 +55,7 @@ func (w *worker) start(wg *sync.WaitGroup, wqsz, wqintv int) error {
 	}
 
 	w.wg = wg
-	w.jobCh = make(chan *execJob, workerJobChanSize)
+	w.jobCh = make(chan *WorkerEvent, workerJobChanSize)
 	w.wq = newWorkerQueue(wqsz)
 	w.lastCommitTm = time.Now().Unix()
 	w.commitInterval = int64(wqintv)
@@ -63,7 +70,7 @@ func (w *worker) stop() {
 	close(w.jobCh)
 }
 
-func (w *worker) push(job *execJob) {
+func (w *worker) push(job *WorkerEvent) {
 	w.jobCh <- job
 }
 
@@ -72,10 +79,10 @@ func (w *worker) loop() {
 
 	defer func() {
 		w.wg.Done()
-		atomic.StoreInt64(&w.status, workerStatusExit)
+		atomic.StoreInt64(&w.status, WorkerStatusExit)
 	}()
 
-	atomic.StoreInt64(&w.status, workerStatusRunning)
+	atomic.StoreInt64(&w.status, WorkerStatusRunning)
 
 	for {
 		select {
@@ -114,8 +121,7 @@ func (w *worker) loop() {
 	}
 }
 
-func (w *worker) commitQueue() error {
-	jobs := w.wq.jobs()
+func (w *worker) commitToExecutor(executor IJobExecutor, jobs []*WorkerEvent) error {
 	retryTimes := 0
 	maxRetryTimes := 0xfffffff
 	retryInterval := time.Second * 2
@@ -124,7 +130,7 @@ func (w *worker) commitQueue() error {
 	for {
 		if nil != err {
 			// Retry and sleep
-			atomic.StoreInt64(&w.status, workerStatusAbnormal)
+			atomic.StoreInt64(&w.status, WorkerStatusAbnormal)
 			retryTimes++
 			if retryTimes > maxRetryTimes {
 				return errors.Trace(err)
@@ -134,25 +140,25 @@ func (w *worker) commitQueue() error {
 		}
 
 		// Begin committing
-		err = w.executor.Begin()
+		err = executor.Begin()
 		if nil != err {
 			continue
 		}
 
 		for _, job := range jobs {
-			err = w.executor.Exec(job)
+			err = executor.Exec(job)
 			if nil != err {
 				break
 			}
 		}
 		if nil != err {
 			// We need rollback
-			if rerr := w.executor.Rollback(); nil != rerr {
+			if rerr := executor.Rollback(); nil != rerr {
 				logrus.Errorf("Rollback error = %v", rerr)
 			}
 			continue
 		}
-		err = w.executor.Commit()
+		err = executor.Commit()
 		if nil != err {
 			continue
 		}
@@ -161,7 +167,29 @@ func (w *worker) commitQueue() error {
 		break
 	}
 
-	atomic.StoreInt64(&w.status, workerStatusRunning)
+	atomic.StoreInt64(&w.status, WorkerStatusRunning)
+
+	return nil
+}
+
+func (w *worker) commitToExecutors(jobs []*WorkerEvent) error {
+	var err error
+
+	for _, executor := range w.executors {
+		if err = w.commitToExecutor(executor, jobs); nil != err {
+			return errors.Trace(err)
+		}
+	}
+	return nil
+}
+
+func (w *worker) commitQueue() error {
+	jobs := w.wq.jobs()
+
+	err := w.commitToExecutors(jobs)
+	if nil != err {
+		return errors.Trace(err)
+	}
 	// Reset jobs
 	w.wq.reset()
 	w.lastCommitTm = time.Now().UnixNano() / 1e6

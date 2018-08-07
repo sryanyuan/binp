@@ -2,7 +2,7 @@ package binlog
 
 import (
 	"github.com/juju/errors"
-	"github.com/sryanyuan/binp/utils"
+	"github.com/sryanyuan/binp/serialize"
 )
 
 const (
@@ -22,7 +22,7 @@ type FormatDescriptionEvent struct {
 // Decode decodes the binary data into payload
 func (e *FormatDescriptionEvent) Decode(data []byte) error {
 	var err error
-	r := utils.NewBinReader(data)
+	r := serialize.NewBinReader(data)
 
 	e.BinlogVersion, err = r.ReadUint16()
 	if nil != err {

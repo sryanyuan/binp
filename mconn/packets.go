@@ -4,7 +4,7 @@ import (
 	"crypto/sha1"
 
 	"github.com/juju/errors"
-	"github.com/sryanyuan/binp/utils"
+	"github.com/sryanyuan/binp/serialize"
 )
 
 // PacketMySQL defines mysql packet interface
@@ -64,7 +64,7 @@ type PacketHandshake struct {
 // https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::Handshake
 func (p *PacketHandshake) Decode(data []byte) error {
 	var err error
-	r := utils.NewBinReader(data)
+	r := serialize.NewBinReader(data)
 
 	// Protocol version
 	p.ProtocolVersion, err = r.ReadUint8()
@@ -246,7 +246,7 @@ func (p *PacketHandshakeResponse) Encode() []byte {
 	var err error
 	sz := p.esitimateSize()
 	data := make([]byte, sz)
-	w := utils.NewBinWriter(data)
+	w := serialize.NewBinWriter(data)
 
 	// Skip the payload length, auto fill by WritePacket
 	if err = w.WriteUint32(0); nil != err {
@@ -377,7 +377,7 @@ func (p *PacketOK) isOK() bool {
 // Decode decodes binary data to mysql packet
 func (p *PacketOK) Decode(data []byte) error {
 	var err error
-	r := utils.NewBinReader(data)
+	r := serialize.NewBinReader(data)
 
 	// Check the ok packet is a eof packet
 	if p.Header == PacketHeaderEOF && len(data) < 9 {
@@ -438,7 +438,7 @@ func (p *PacketErr) toError() error {
 // Decode decodes binary data to mysql packet
 func (p *PacketErr) Decode(data []byte) error {
 	var err error
-	r := utils.NewBinReader(data)
+	r := serialize.NewBinReader(data)
 
 	if p.Header != PacketHeaderERR {
 		return errors.Errorf("Not a packet err, header = %v", p.Header)
@@ -480,7 +480,7 @@ func (p *PacketComStr) Encode() ([]byte, error) {
 	buflen := len(p.command) + 1 + 4
 	data := make([]byte, buflen)
 
-	w := utils.NewBinWriter(data)
+	w := serialize.NewBinWriter(data)
 	if err := w.WriteUint32(0); nil != err {
 		panic(err)
 	}
@@ -505,7 +505,7 @@ func (p *PacketEOF) Decode(data []byte) error {
 	if len(data) != 5 {
 		return ErrMalformPacket
 	}
-	r := utils.NewBinReader(data)
+	r := serialize.NewBinReader(data)
 	header, err := r.ReadUint8()
 	if nil != err {
 		return errors.Trace(err)
@@ -549,7 +549,7 @@ func (p *PacketRegisterSlave) Encode() ([]byte, error) {
 	l := 4 + 1 + 4 + 1 + len(p.Hostname) + 1 + len(p.User) + 1 + len(p.Password) + 2 + 4 + 4
 	data := make([]byte, l)
 
-	w := utils.NewBinWriter(data)
+	w := serialize.NewBinWriter(data)
 	if err := w.WriteUint32(0); nil != err {
 		return nil, errors.Trace(err)
 	}
@@ -625,7 +625,7 @@ type PacketBinlogDump struct {
 func (p *PacketBinlogDump) Encode() ([]byte, error) {
 	l := 4 + 1 + 4 + 2 + 4 + len(p.BinlogFile)
 	data := make([]byte, l)
-	w := utils.NewBinWriter(data)
+	w := serialize.NewBinWriter(data)
 
 	if err := w.WriteUint32(0); nil != err {
 		return nil, errors.Trace(err)

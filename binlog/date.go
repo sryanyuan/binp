@@ -4,15 +4,15 @@ import (
 	"fmt"
 
 	"github.com/juju/errors"
-	"github.com/sryanyuan/binp/utils"
+	"github.com/sryanyuan/binp/serialize"
 )
 
-func decodeDate(r *utils.BinReader) (interface{}, error) {
+func decodeDate(r *serialize.BinReader) (interface{}, error) {
 	v, err := r.ReadBytes(3)
 	if nil != err {
 		return nil, errors.Trace(err)
 	}
-	fv := utils.NumberFromBytesBigEndian(v)
+	fv := serialize.NumberFromBytesBigEndian(v)
 	if 0 == fv {
 		return "0000-00-00", nil
 	}

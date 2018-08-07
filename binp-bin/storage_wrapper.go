@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	storageKeyPosition = "position"
-	lazySaveTime       = 30
+	storageKeyReplicationPoint = "replication_point"
+	lazySaveTime               = 30
 )
 
 var (
@@ -31,8 +31,8 @@ func newStorageReaderWriter(st storage.IStorage) *storageReaderWriter {
 	}
 }
 
-func (r *storageReaderWriter) readPosition(pos *mconn.ReplicationPoint) error {
-	v, err := r.st.Get(storageKeyPosition)
+func (r *storageReaderWriter) readPoint(point *mconn.ReplicationPoint) error {
+	v, err := r.st.Get(storageKeyReplicationPoint)
 	if nil != err {
 		return errors.Trace(err)
 	}
@@ -43,18 +43,18 @@ func (r *storageReaderWriter) readPosition(pos *mconn.ReplicationPoint) error {
 	if !ok {
 		return errors.New("Invalid format")
 	}
-	if err := json.Unmarshal([]byte(sv), pos); nil != err {
+	if err := json.Unmarshal([]byte(sv), point); nil != err {
 		return errors.Trace(err)
 	}
 	return nil
 }
 
-func (r *storageReaderWriter) writePosition(pos *mconn.ReplicationPoint) error {
-	v, err := json.Marshal(pos)
+func (r *storageReaderWriter) writePoint(point *mconn.ReplicationPoint) error {
+	v, err := json.Marshal(point)
 	if nil != err {
 		return errors.Trace(err)
 	}
-	err = r.st.Set(storageKeyPosition, string(v))
+	err = r.st.Set(storageKeyReplicationPoint, string(v))
 	if nil != err {
 		return errors.Trace(err)
 	}

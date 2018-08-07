@@ -1,4 +1,4 @@
-package utils
+package serialize
 
 // NumberFromBytesLittleEndian parses the buf by little endian order
 func NumberFromBytesLittleEndian(buf []byte) uint64 {

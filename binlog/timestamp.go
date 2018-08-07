@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/juju/errors"
-	"github.com/sryanyuan/binp/utils"
+	"github.com/sryanyuan/binp/serialize"
 )
 
 const (
@@ -12,7 +12,7 @@ const (
 )
 
 // my_time.cc
-func decodeTimestamp2(r *utils.BinReader, dec uint16) (interface{}, error) {
+func decodeTimestamp2(r *serialize.BinReader, dec uint16) (interface{}, error) {
 	if dec > datetimeMaxDecimals {
 		return nil, errors.Errorf("invalid timestamp2 decimal %d", dec)
 	}
@@ -20,7 +20,7 @@ func decodeTimestamp2(r *utils.BinReader, dec uint16) (interface{}, error) {
 	if nil != err {
 		return nil, errors.Trace(err)
 	}
-	sec := int64(utils.NumberFromBytesBigEndian(bv))
+	sec := int64(serialize.NumberFromBytesBigEndian(bv))
 	usec := int64(0)
 	switch dec {
 	case 0:
@@ -39,7 +39,7 @@ func decodeTimestamp2(r *utils.BinReader, dec uint16) (interface{}, error) {
 			if nil != err {
 				return nil, errors.Trace(err)
 			}
-			nv := utils.NumberFromBytesBigEndian(v)
+			nv := serialize.NumberFromBytesBigEndian(v)
 			usec = int64(nv) * 100
 		}
 	case 5, 6:
@@ -48,7 +48,7 @@ func decodeTimestamp2(r *utils.BinReader, dec uint16) (interface{}, error) {
 			if nil != err {
 				return nil, errors.Trace(err)
 			}
-			nv := utils.NumberFromBytesBigEndian(v)
+			nv := serialize.NumberFromBytesBigEndian(v)
 			usec = int64(nv)
 		}
 	}
