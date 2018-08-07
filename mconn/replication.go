@@ -41,7 +41,7 @@ type ReplicationConfig struct {
 
 // Position represents a binlog replication position, slave can
 // start sync with the position
-type Position struct {
+type ReplicationPoint struct {
 	Filename string
 	Offset   uint32
 	Gtid     string
@@ -85,7 +85,7 @@ func (c *Conn) sendRegistgerSlaveCommand() error {
 }
 
 // StartDumpBinlog start dump binlog from master
-func (c *Conn) StartDumpBinlog(pos Position) error {
+func (c *Conn) StartDumpBinlog(pos ReplicationPoint) error {
 	var err error
 
 	if c.rc.EnableGtid {
@@ -99,7 +99,7 @@ func (c *Conn) StartDumpBinlog(pos Position) error {
 	return nil
 }
 
-func (c *Conn) sendBinlogDumpCommand(pos Position) error {
+func (c *Conn) sendBinlogDumpCommand(pos ReplicationPoint) error {
 	c.resetSequence()
 
 	var pbd PacketBinlogDump

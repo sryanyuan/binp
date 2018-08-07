@@ -9,7 +9,7 @@ import (
 type execJob struct {
 	action    int // Insert/Update/Delete
 	timestamp uint32
-	pos       mconn.Position
+	pos       mconn.ReplicationPoint
 	table     *TableInfo
 	row       *binlog.Row
 }

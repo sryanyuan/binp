@@ -95,7 +95,7 @@ func (e *EventHandler) Prepare() error {
 	}
 
 	// Read the position from storage
-	var position mconn.Position
+	var position mconn.ReplicationPoint
 	err = e.strw.readPosition(&position)
 	if nil != err {
 		if err != errStorageKeyNotFound {

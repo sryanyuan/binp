@@ -243,6 +243,13 @@ func (p *Parser) parsePayload(event *Event, data []byte) error {
 			event.Payload.MariadbGTID = evt
 			payload = evt
 		}
+	case HeartbeatEventType:
+		{
+			evt := &HeartbeatEvent{}
+			event.Payload.Parsed = true
+			event.Payload.Heartbeat = evt
+			payload = evt
+		}
 	}
 
 	if nil == payload {

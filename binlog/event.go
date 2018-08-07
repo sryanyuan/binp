@@ -115,6 +115,8 @@ type EventSet struct {
 	GTID *GTIDEvent
 	// Mariadb gtid event
 	MariadbGTID *MariadbGTIDEvent
+	// Heartbeat event
+	Heartbeat *HeartbeatEvent
 }
 
 // Decode decodes binary data to a binlog event

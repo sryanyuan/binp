@@ -47,17 +47,18 @@ func (i *HandshakeInfo) String() string {
 
 // Conn is a connection communicate with the mysql server
 type Conn struct {
-	ds         *DataSource
-	mu         sync.Mutex
-	status     int64
-	lastErr    error
-	conn       net.Conn
-	r          io.Reader
-	seq        uint8
-	capability uint32
-	loc        *time.Location
-	si         HandshakeInfo
-	rc         *ReplicationConfig
+	ds          *DataSource
+	mu          sync.Mutex
+	status      int64
+	lastErr     error
+	conn        net.Conn
+	r           io.Reader
+	seq         uint8
+	capability  uint32
+	loc         *time.Location
+	si          HandshakeInfo
+	rc          *ReplicationConfig
+	readTimeout time.Duration
 	// TODO: support tls
 	tlsConfig *tls.Config
 }
@@ -124,7 +125,7 @@ func (c *Conn) Connect(ds *DataSource, database string) error {
 	}
 
 	c.conn = conn
-	c.r = bufio.NewReader(c.conn)
+	c.r = bufio.NewReader(c)
 	c.status = connStatusConnected
 
 	// Receive handshake from server
@@ -136,6 +137,23 @@ func (c *Conn) Connect(ds *DataSource, database string) error {
 
 	c.mu.Unlock()
 	return nil
+}
+
+// SetReadTimeout set the read timeout duration
+func (c *Conn) SetReadTimeout(dura time.Duration) {
+	c.readTimeout = dura
+}
+
+// Read implement io.Reader interface
+func (c *Conn) Read(p []byte) (n int, err error) {
+	if 0 != c.readTimeout {
+		c.conn.SetReadDeadline(time.Now().Add(c.readTimeout))
+	}
+	n, err = c.conn.Read(p)
+	if 0 != c.readTimeout {
+		c.conn.SetReadDeadline(time.Time{})
+	}
+	return
 }
 
 // WritePacket writes the packet to mysql, data must has 4 bytes unused in head

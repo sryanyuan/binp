@@ -2,6 +2,7 @@ package slave
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -26,7 +27,9 @@ const (
 )
 
 const (
-	defaultEventBufferSize = 10240
+	defaultEventBufferSize        = 10240
+	defaultHeartbeatInterval      = 30
+	defaultSwitchMasterRetryTimes = 30
 )
 
 var (
@@ -36,26 +39,27 @@ var (
 
 // MasterStatus is status of master
 type MasterStatus struct {
-	Version string         `json:"version"`
-	Pos     mconn.Position `json:"position"`
+	Version string                 `json:"version"`
+	Pos     mconn.ReplicationPoint `json:"position"`
 }
 
 // Slave represents a slave node like a mysql slave to participate the mysql replication
 type Slave struct {
-	cancelCtx  context.Context
-	cancelFn   context.CancelFunc
-	wg         sync.WaitGroup
-	mu         sync.Mutex
-	dss        []mconn.DataSource
-	dsi        int64
-	rc         *mconn.ReplicationConfig
-	status     int64
-	currentPos mconn.Position
-	eq         *eventQueue
-	conn       *mconn.Conn
-	si         mconn.HandshakeInfo
-	mariaDB    bool
-	parser     *binlog.Parser
+	cancelCtx         context.Context
+	cancelFn          context.CancelFunc
+	wg                sync.WaitGroup
+	mu                sync.Mutex
+	dss               []mconn.DataSource
+	dsi               int64
+	rc                *mconn.ReplicationConfig
+	status            int64
+	currentRplPoint   mconn.ReplicationPoint
+	eq                *eventQueue
+	conn              *mconn.Conn
+	si                mconn.HandshakeInfo
+	mariaDB           bool
+	parser            *binlog.Parser
+	lastHeartbeatTime uint32
 }
 
 // NewSlave creates a new slave
@@ -78,7 +82,7 @@ func NewSlave(dss []mconn.DataSource, rc *mconn.ReplicationConfig, srule rule.IS
 }
 
 // Start starts the slave at the position
-func (s *Slave) Start(pos mconn.Position) error {
+func (s *Slave) Start(pos mconn.ReplicationPoint) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -90,9 +94,9 @@ func (s *Slave) Start(pos mconn.Position) error {
 		return errors.New("Empty data source")
 	}
 
-	s.currentPos = pos
+	s.currentRplPoint = pos
 	logrus.Infof("Start sync from %v:%v(%v)",
-		s.currentPos.Filename, s.currentPos.Offset, s.currentPos.Gtid)
+		s.currentRplPoint.Filename, s.currentRplPoint.Offset, s.currentRplPoint.Gtid)
 	err := s.prepare()
 	if nil != err {
 		return errors.Trace(err)
@@ -157,9 +161,9 @@ func (s *Slave) pushQueueEvent(event *binlog.Event) {
 }
 
 func (s *Slave) prepare() error {
-	if s.currentPos.Offset < 4 {
+	if s.currentRplPoint.Offset < 4 {
 		// MySQL binlog events is started at position 4 as a Format_desc event
-		s.currentPos.Offset = 4
+		s.currentRplPoint.Offset = 4
 	}
 
 	if err := s.registerSlave(); nil != err {
@@ -167,34 +171,14 @@ func (s *Slave) prepare() error {
 	}
 
 	// Send dump binlog command
-	if err := s.conn.StartDumpBinlog(s.currentPos); nil != err {
+	if err := s.conn.StartDumpBinlog(s.currentRplPoint); nil != err {
 		return errors.Trace(err)
 	}
 
 	return nil
 }
 
-func (s *Slave) adjustBinlogChecksum() error {
-	/*rows, err := s.conn.Exec("SHOW GLOBAL VARIABLES LIKE 'BINLOG_CHECKSUM'")
-	if nil != err {
-		return errors.Trace(err)
-	}
-	if err = rows.Results.Next(); nil != err {
-		rows.Results.Close()
-		return errors.Trace(err)
-	}
-	rows.Results.Close()
-
-	var checkSumType string
-	if checkSumType, err = rows.Results.GetAtString(1); nil != err {
-		return errors.Trace(err)
-	}
-	if "" != checkSumType {
-		_, err = s.conn.Exec("SET @master_binlog_checksum='NONE'")
-		if nil != err {
-			return errors.Trace(err)
-		}
-	}*/
+func (s *Slave) disableBinlogChecksum() error {
 	// We just set the binlog checksum to the global binlog_checksum
 	_, err := s.conn.Exec("SET @master_binlog_checksum = @@global.binlog_checksum")
 	if nil != err {
@@ -228,13 +212,25 @@ func (s *Slave) adjustBinlogChecksum() error {
 	return nil
 }
 
+func (s *Slave) enableBinlogHeartbeat() error {
+	intervalNanoSecs := int64(defaultHeartbeatInterval * 1e9)
+	// We just set the binlog checksum to the global binlog_checksum
+	_, err := s.conn.Exec(fmt.Sprintf("SET @master_heartbeat_period = %d", intervalNanoSecs))
+	if nil != err {
+		return errors.Trace(err)
+	}
+	// Enable connection's read timeout
+	s.conn.SetReadTimeout(time.Duration(defaultHeartbeatInterval*time.Second) * 3 / 2)
+	return nil
+}
+
 func (s *Slave) nextDataSource() {
 	atomic.AddInt64(&s.dsi, 1)
 }
 
 // GetDataSourceIndex get the current data source index used by replication replication
 func (s *Slave) GetDataSourceIndex() int {
-	return int(atomic.LoadInt64(&s.dsi))
+	return int(atomic.LoadInt64(&s.dsi)) % len(s.dss)
 }
 
 // GetDataSource get the current data source used by replication replication
@@ -281,8 +277,13 @@ func (s *Slave) registerSlave() error {
 		}
 	}
 
-	// Adjust binlog checksum
-	if err = s.adjustBinlogChecksum(); nil != err {
+	// Disable binlog checksum
+	if err = s.disableBinlogChecksum(); nil != err {
+		return errors.Trace(err)
+	}
+
+	// Enable binlog heartbeat
+	if err = s.enableBinlogHeartbeat(); nil != err {
 		return errors.Trace(err)
 	}
 
@@ -303,20 +304,28 @@ func (s *Slave) registerSlave() error {
 }
 
 func (s *Slave) onBinlogPumped(event *binlog.Event) error {
+	if event.Header.LogPos > 0 {
+		s.currentRplPoint.Offset = event.Header.LogPos
+	}
+
 	switch event.Header.EventType {
 	case binlog.RotateEventType:
 		{
 			evt := event.Payload.Rotate
 			// If using position replication, update the replication position
-			s.currentPos.Filename = evt.NextName
-			s.currentPos.Offset = uint32(evt.Position)
-			logrus.Infof("Rotate to %v:%v(%v)", s.currentPos.Filename, s.currentPos.Offset, s.currentPos.Gtid)
+			s.currentRplPoint.Filename = evt.NextName
+			s.currentRplPoint.Offset = uint32(evt.Position)
+			logrus.Infof("Rotate to %v:%v(%v)", s.currentRplPoint.Filename, s.currentRplPoint.Offset, s.currentRplPoint.Gtid)
 		}
 	case binlog.WriteRowsEventV0Type, binlog.WriteRowsEventV1Type, binlog.WriteRowsEventV2Type,
 		binlog.UpdateRowsEventV0Type, binlog.UpdateRowsEventV1Type, binlog.UpdateRowsEventV2Type,
 		binlog.DeleteRowsEventV0Type, binlog.DeleteRowsEventV1Type, binlog.DeleteRowsEventV2Type:
 		{
-			s.currentPos.Offset = event.Header.LogPos
+			s.currentRplPoint.Offset = event.Header.LogPos
+		}
+	case binlog.HeartbeatEventType:
+		{
+			s.lastHeartbeatTime = uint32(time.Now().Unix())
 		}
 	}
 
@@ -332,14 +341,15 @@ func (s *Slave) pumpBinlog() {
 	for {
 		data, err := s.conn.ReadPacket()
 		if nil != err {
+			logrus.Errorf("Read packet from master error: %v", err)
 			err = s.onPumpBinlogConnectionError()
 			if nil != err {
 				s.pushQueueError(err)
 				return
 			}
 			// If retry success
-			logrus.Infof("Retry sync at position %s:%d(%s) success",
-				s.currentPos.Filename, s.currentPos.Offset, s.currentPos.Gtid)
+			logrus.Infof("Retry sync at point %s:%d(%s) success",
+				s.currentRplPoint.Filename, s.currentRplPoint.Offset, s.currentRplPoint.Gtid)
 			continue
 		}
 
@@ -402,18 +412,23 @@ func (s *Slave) onPumpBinlogConnectionError() error {
 				if s.rc.EnableGtid {
 					// If using gtid, empty gtid is allowed
 				} else {
-					if s.currentPos.Filename == "" {
+					if s.currentRplPoint.Filename == "" {
 						return errors.Errorf("Can't retry sync with invalid position %v.%v",
-							s.currentPos.Filename, s.currentPos.Offset)
+							s.currentRplPoint.Filename, s.currentRplPoint.Offset)
 					}
 				}
 				logrus.Infof("Retry sync from position %v:%v(%v)",
-					s.currentPos.Filename, s.currentPos.Offset, s.currentPos.Gtid)
+					s.currentRplPoint.Filename, s.currentRplPoint.Offset, s.currentRplPoint.Gtid)
 				// Do retry
 				retryTimes++
 				s.parser.Reset()
 				if err := s.prepare(); nil != err {
 					logrus.Errorf("Retry sync error %v, retry times %v", err, retryTimes)
+					// Check need switch master
+					if retryTimes%defaultSwitchMasterRetryTimes == 0 {
+						logrus.Infof("Select next data source due to master down")
+						s.nextDataSource()
+					}
 					continue
 				}
 

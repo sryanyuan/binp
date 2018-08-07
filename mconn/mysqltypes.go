@@ -44,39 +44,40 @@ const (
 // https://dev.mysql.com/doc/internals/en/character-set.html#packet-Protocol::CharacterSet
 // Not all charset ...
 const (
-	_ = iota
-	CharsetBig5ChineseCI
-	CharsetLatin2CzechCS
-	CharsetDec8SwedishCI
-	CharsetCp850GeneralCI
-	CharsetGerman1CI
-	CharsetHp8EnglishCI
-	CharsetKoi8rGeneralCI
-	CharsetLatin1SwedishCI
-	CharsetLatin2GeneralCI
-	CharsetSwe7SwedishCI
-	CharsetAsciiGeneralCI
-	CharsetUjisJapaneseCI
-	CharsetSjisJapaneseCI
-	CharsetCp1251BulgarianCI
-	CharsetLatin1DanishCI
-	CharsetHebrewGeneralCI
-	CharsetTis620ThaiCI
-	CharsetEuckrKoreanCI
-	CharsetLatin7EstonianCS
-	CharsetLatin2HungarianCI
-	CharsetKoi8uGeneralCI
-	CharsetCp1251UkrainianCI
-	CharsetGb2312ChineseCI
-	CharsetGreekGeneralCI
-	CharsetCp1250GeneralCI
-	CharsetLatin2CroatianCI
-	CharsetGbkChineseCI
-	CharsetCp1257LithuanianCI
-	CharsetLatin5KurkishCI
-	CharsetLatin1German2CI
-	CharsetArmscii8GeneralCI
-	CharsetUtf8GeneralCI
+	_                         = iota
+	CharsetBig5ChineseCI      // 1
+	CharsetLatin2CzechCS      // 2
+	CharsetDec8SwedishCI      // 3
+	CharsetCp850GeneralCI     // 4
+	CharsetGerman1CI          // 5
+	CharsetHp8EnglishCI       // 6
+	CharsetKoi8rGeneralCI     // 7
+	CharsetLatin1SwedishCI    // 8
+	CharsetLatin2GeneralCI    // 9
+	CharsetSwe7SwedishCI      // 10
+	CharsetAsciiGeneralCI     // 11
+	CharsetUjisJapaneseCI     // 12
+	CharsetSjisJapaneseCI     // 13
+	CharsetCp1251BulgarianCI  // 14
+	CharsetLatin1DanishCI     // 15
+	CharsetHebrewGeneralCI    // 16
+	CharsetMissing1           // 17
+	CharsetTis620ThaiCI       // 18
+	CharsetEuckrKoreanCI      // 19
+	CharsetLatin7EstonianCS   // 20
+	CharsetLatin2HungarianCI  // 21
+	CharsetKoi8uGeneralCI     // 22
+	CharsetCp1251UkrainianCI  // 23
+	CharsetGb2312ChineseCI    // 24
+	CharsetGreekGeneralCI     // 25
+	CharsetCp1250GeneralCI    // 26
+	CharsetLatin2CroatianCI   // 27
+	CharsetGbkChineseCI       // 28
+	CharsetCp1257LithuanianCI // 29
+	CharsetLatin5KurkishCI    // 30
+	CharsetLatin1German2CI    // 31
+	CharsetArmscii8GeneralCI  // 32
+	CharsetUtf8GeneralCI      // 33
 )
 
 const (

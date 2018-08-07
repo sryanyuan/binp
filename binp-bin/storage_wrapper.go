@@ -31,7 +31,7 @@ func newStorageReaderWriter(st storage.IStorage) *storageReaderWriter {
 	}
 }
 
-func (r *storageReaderWriter) readPosition(pos *mconn.Position) error {
+func (r *storageReaderWriter) readPosition(pos *mconn.ReplicationPoint) error {
 	v, err := r.st.Get(storageKeyPosition)
 	if nil != err {
 		return errors.Trace(err)
@@ -49,7 +49,7 @@ func (r *storageReaderWriter) readPosition(pos *mconn.Position) error {
 	return nil
 }
 
-func (r *storageReaderWriter) writePosition(pos *mconn.Position) error {
+func (r *storageReaderWriter) writePosition(pos *mconn.ReplicationPoint) error {
 	v, err := json.Marshal(pos)
 	if nil != err {
 		return errors.Trace(err)
