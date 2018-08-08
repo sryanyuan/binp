@@ -37,7 +37,8 @@ func init() {
 		dbs := make([]*sql.DB, 0, len(dest.DBs))
 		for _, v := range dest.DBs {
 			v.Type = "mysql"
-			db, err := utils.CreateDB(v)
+			db, err := utils.CreateDBWithArgs(v,
+				utils.WithCharset(v.Charset), utils.WithInterpolateParams(dest.Text))
 			if nil != err {
 				return nil, errors.Trace(err)
 			}
