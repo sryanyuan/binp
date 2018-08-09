@@ -3,6 +3,7 @@ package binlog
 import (
 	"encoding/binary"
 	"fmt"
+	"time"
 
 	"github.com/juju/errors"
 	"github.com/sryanyuan/binp/serialize"
@@ -11,6 +12,22 @@ import (
 const (
 	timefOfs int64 = 0x800000000000
 )
+
+var (
+	decimalTimeFormat = []string{
+		"2006-01-02 15:04:05",
+		"2006-01-02 15:04:05.0",
+		"2006-01-02 15:04:05.00",
+		"2006-01-02 15:04:05.000",
+		"2006-01-02 15:04:05.0000",
+		"2006-01-02 15:04:05.00000",
+		"2006-01-02 15:04:05.000000",
+	}
+)
+
+func formatTimeWithDecimals(t time.Time, dec int) string {
+	return t.Format(decimalTimeFormat[dec])
+}
 
 func formatZeroTime(frac int, dec int) string {
 	if dec == 0 {

@@ -1,7 +1,6 @@
 package binlog
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/juju/errors"
@@ -17,16 +16,20 @@ func decodeDatetime(r *serialize.BinReader) (interface{}, error) {
 	if nil != err {
 		return nil, errors.Trace(err)
 	}
+	if v == 0 {
+		return "0000-00-00 00:00:00", nil
+	}
 	d := v / 1000000
 	t := v % 1000000
 
-	return fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d",
-		d/10000,
-		(d%10000)/100,
-		d%100,
-		t/10000,
-		(t%10000)/100,
-		t%100), nil
+	return formatTimeWithDecimals(time.Date(int(d/10000),
+		time.Month((d%10000)/100),
+		int(d%100),
+		int(t/10000),
+		int((t%10000)/100),
+		int(t%100),
+		0,
+		time.UTC), 0), nil
 }
 
 // github.com/siddontang/go-mysql/replication/row_event.go
@@ -85,5 +88,5 @@ func decodeDatetime2(r *serialize.BinReader, meta uint16) (interface{}, error) {
 	hour := int((hms >> 12))
 
 	tm := time.Date(year, time.Month(month), day, hour, minute, second, int(frac*1000), time.UTC)
-	return tm.String(), nil
+	return formatTimeWithDecimals(tm, int(meta)), nil
 }

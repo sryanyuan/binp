@@ -22,7 +22,7 @@ func numberFromBufferBigEndian(buf []byte) uint64 {
 	l := len(buf)
 	v := uint64(0)
 	for i, b := range buf {
-		v |= uint64(b) << (uint(l-i-1) * 5)
+		v |= uint64(b) << (uint(l-i-1) * 8)
 	}
 	return v
 }

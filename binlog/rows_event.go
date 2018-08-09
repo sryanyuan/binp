@@ -91,6 +91,17 @@ func readValue(r *serialize.BinReader, tp uint8, meta uint16) (interface{}, erro
 			}
 			return v, nil
 		}
+	case mconn.FieldTypeDate:
+		{
+			v, err := r.ReadUint24()
+			if nil != err {
+				return nil, errors.Trace(err)
+			}
+			if 0 == v {
+				return "0000-00-00", nil
+			}
+			return fmt.Sprintf("%04d-%02d-%02d", v/(32*16), v/32%16, v%32), nil
+		}
 	case mconn.FieldTypeLongLong:
 		{
 			v, err := r.ReadInt64()
@@ -142,7 +153,7 @@ func readValue(r *serialize.BinReader, tp uint8, meta uint16) (interface{}, erro
 				return nil, errors.Trace(err)
 			}
 			tm := time.Unix(int64(v), 0)
-			return tm.String(), nil
+			return formatTimeWithDecimals(tm, 0), nil
 		}
 	case mconn.FieldTypeTimestamp2:
 		{
@@ -306,9 +317,9 @@ func (e *RowsEvent) readRow(r *serialize.BinReader, mask []byte) (*Row, error) {
 		}
 
 		bitByteIndex := columnIndex / 8
-		columnIndex++
 		nullByte := nullMask[int(bitByteIndex)]
-		bitMask := uint8(1 << (uint(bitByteIndex) % 8))
+		bitMask := uint8(1 << (uint(columnIndex) % 8))
+		columnIndex++
 		if nullByte&bitMask != 0 {
 			// Is null
 			continue

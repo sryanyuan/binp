@@ -17,12 +17,13 @@ const (
 
 // WorkerEvent holds the job IOutDest need to output
 type WorkerEvent struct {
-	Etype     int // Insert/Update/Delete
-	Timestamp uint32
-	Point     mconn.ReplicationPoint
-	Ti        *tableinfo.TableInfo
-	Columns   []*tableinfo.ColumnWithValue
-	SDesc     *rule.SyncDesc
+	Etype      int // Insert/Update/Delete
+	Timestamp  uint32
+	Point      mconn.ReplicationPoint
+	Ti         *tableinfo.TableInfo
+	Columns    []*tableinfo.ColumnWithValue
+	NewColumns []*tableinfo.ColumnWithValue
+	SDesc      *rule.SyncDesc
 }
 
 // IJobExecutor define the interface of output destination
@@ -55,48 +56,3 @@ func createExecutors(dests []DestinationConfig) ([]IJobExecutor, error) {
 	}
 	return execs, nil
 }
-
-/*func executorFromDBConfig(dcs []mconn.DBConfig) (IJobExecutor, error) {
-	if nil == dcs || 0 == len(dcs) {
-		return nil, errors.New("Invalid executor input argument number")
-	}
-	// Every executor type must be same
-	dtype := ""
-	for i := range dcs {
-		dc := &dcs[i]
-		if "" == dtype {
-			dtype = strings.ToLower(dc.Type)
-		} else {
-			if dtype != dc.Type {
-				return nil, errors.New("Executor type must be same")
-			}
-		}
-	}
-	// Only mysql executor support multi db
-	if dtype != "mysql" && len(dcs) > 1 {
-		return nil, errors.New("Only mysql executor support multi destination")
-	}
-
-	if dtype == "mysql" {
-		var me mysqlExecutor
-
-		dbs := make([]*sql.DB, 0, len(dcs))
-		for i := range dcs {
-			dc := &dcs[i]
-			db, err := utils.CreateDB(dc)
-			if nil != err {
-				return nil, errors.Trace(err)
-			}
-			dbs = append(dbs, db)
-		}
-
-		if err := me.Attach(dbs); nil != err {
-			return nil, errors.Trace(err)
-		}
-
-		return &me, nil
-	}
-
-	return nil, errors.Errorf("Unknown executor type %s", dtype)
-}
-*/

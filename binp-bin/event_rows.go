@@ -7,65 +7,42 @@ import (
 	"github.com/sryanyuan/binp/worker"
 )
 
-func fillColumnValues(ti *tableinfo.TableInfo, row *binlog.Row) []*tableinfo.ColumnWithValue {
-	cwvs := make([]*tableinfo.ColumnWithValue, 0, len(ti.Columns))
-	for i, v := range ti.Columns {
-		var cw tableinfo.ColumnWithValue
-		cw.Column = v
-		cw.Value = row.ColumnDatas[i]
-		cwvs = append(cwvs, &cw)
-	}
-	return cwvs
-}
-
 func (e *EventHandler) onRowsEvent(evt *binlog.Event) error {
 	revt := evt.Payload.Rows
 	if nil == revt {
 		return errors.New("Nil rows payload")
 	}
-
-	switch revt.Action {
-	case binlog.RowWrite:
-		{
-			if err := e.onWriteRowsEvent(evt); nil != err {
-				return errors.Trace(err)
-			}
-		}
-	case binlog.RowUpdate:
-		{
-			if err := e.onUpdateRowsEvent(evt); nil != err {
-				return errors.Trace(err)
-			}
-		}
-	case binlog.RowDelete:
-		{
-			if err := e.onDeleteRowsEvent(evt); nil != err {
-				return errors.Trace(err)
-			}
-		}
-	default:
-		{
-			return errors.Errorf("Unknown rows event type %d", revt.Action)
-		}
-	}
-	return nil
-}
-
-func (e *EventHandler) onWriteRowsEvent(evt *binlog.Event) error {
-	revt := evt.Payload.Rows
+	// Get table info and check binlog meta and table info
 	ti, err := e.getTable(revt.Table.SchemaName, revt.Table.TableName, revt.Rule)
 	if nil != err {
 		return errors.Trace(err)
 	}
+	if len(ti.Columns) < int(revt.ColumnCount) {
+		// Table info columns is less than binlog columns count
+		// Force get table info again and check if new table info
+		// is valid
+		e.cleanTable(revt.Table.SchemaName, revt.Table.TableName)
+		ti, err = e.getTable(revt.Table.SchemaName, revt.Table.TableName, revt.Rule)
+		if nil != err {
+			return errors.Trace(err)
+		}
+		if len(ti.Columns) < int(revt.ColumnCount) {
+			return errors.Errorf("%s.%s: Invalid table information, table columns count is %d, but binlog columns count is %d",
+				revt.Table.SchemaName, revt.Table.TableName, len(ti.Columns), int(revt.ColumnCount))
+		}
+	}
 
-	for _, row := range revt.Rows {
+	for i := 0; i < len(revt.Rows); /* Determined by row event type */ {
 		var job worker.WorkerEvent
 		job.Etype = revt.Action
 		job.Timestamp = evt.Header.Timestamp
 		job.Ti = ti
 		job.SDesc = revt.Rule
 		// Fill row data
-		job.Columns = fillColumnValues(ti, row)
+		job.Columns = tableinfo.FillColumnsWithValue(ti, revt.Rows[i].ColumnDatas)
+		if revt.Action == binlog.RowUpdate {
+			job.NewColumns = tableinfo.FillColumnsWithValue(ti, revt.Rows[i+1].ColumnDatas)
+		}
 		// Get event type
 		if revt.Action == binlog.RowWrite {
 			job.Etype = worker.WorkerEventRowInsert
@@ -77,15 +54,11 @@ func (e *EventHandler) onWriteRowsEvent(evt *binlog.Event) error {
 		if err := e.wmgr.DispatchWorkerEvent(&job, e.cfg.DispatchPolicy); nil != err {
 			return errors.Trace(err)
 		}
+		if revt.Action == binlog.RowUpdate {
+			i += 2
+		} else {
+			i++
+		}
 	}
-
-	return nil
-}
-
-func (e *EventHandler) onUpdateRowsEvent(evt *binlog.Event) error {
-	return nil
-}
-
-func (e *EventHandler) onDeleteRowsEvent(evt *binlog.Event) error {
 	return nil
 }

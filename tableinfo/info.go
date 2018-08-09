@@ -108,18 +108,22 @@ type TableInfo struct {
 	Name         string
 	Columns      []*ColumnInfo
 	IndexColumns []*ColumnInfo
+	// Check table info changed
+	BinlogColumns int
 }
 
-// FillColumnsWithValue fill values into columns
+// FillColumnsWithValue fills columns value with binlog value
+// final columns count is determined by binlog columns, so make sure
+// binlog columns count is not greater than table info columns (panic)
 func FillColumnsWithValue(ti *TableInfo, values []interface{}) []*ColumnWithValue {
-	if len(ti.Columns) != len(values) {
+	if len(ti.Columns) < len(values) {
 		panic("Table columns count not equal to values count")
 	}
 	cwvs := make([]*ColumnWithValue, 0, len(values))
 	for i := range values {
 		cw := &ColumnWithValue{
 			Column: ti.Columns[i],
-			Value:  values[i],
+			Value:  convertUnsigned(values[i], ti.Columns[i].Unsigned),
 		}
 		cwvs = append(cwvs, cw)
 	}

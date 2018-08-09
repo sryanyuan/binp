@@ -60,7 +60,7 @@ func decodeDecimal(r *serialize.BinReader, precision int, scale int) (float64, e
 	pos, value := decodeDecimalDecompressValue(intg0x, buf, uint8(mask))
 	fbuf.WriteString(strconv.FormatUint(uint64(value), 10))
 
-	for i := 0; i < intg; i++ {
+	for i := 0; i < intg0; i++ {
 		value = binary.BigEndian.Uint32(buf[pos:]) ^ mask
 		pos += 4
 		fbuf.WriteString(fmt.Sprintf("%09d", value))

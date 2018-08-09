@@ -1,12 +1,15 @@
 package worker
 
 import (
+	"bytes"
 	"database/sql"
 	"net"
+	"reflect"
 	"time"
 
 	"github.com/juju/errors"
 	"github.com/ngaut/log"
+	"github.com/sirupsen/logrus"
 	"github.com/sryanyuan/binp/utils"
 	// Import mysql driver
 	_ "github.com/go-sql-driver/mysql"
@@ -24,6 +27,7 @@ type mysqlExecutor struct {
 	lastErrTime int64
 	txn         *sql.Tx
 	valuesCache []interface{}
+	statement   bytes.Buffer
 }
 
 func init() {
@@ -139,6 +143,129 @@ func (e *mysqlExecutor) Exec(job *WorkerEvent) error {
 	return nil
 }
 
+func (e *mysqlExecutor) statementGen(job *WorkerEvent) (string, []interface{}, error) {
+	e.statement.Reset()
+	e.valuesCache = e.valuesCache[0:0]
+	switch job.Etype {
+	case WorkerEventRowInsert:
+		{
+			return e.insertStatementGen(job)
+		}
+	case WorkerEventRowUpdate:
+		{
+			return e.updateStatementGen(job)
+		}
+	case WorkerEventRowDelete:
+		{
+			return e.deleteStatementGen(job)
+		}
+	default:
+		{
+			return "", nil, errors.Errorf("Invalid worker event %d to generate statement", job.Etype)
+		}
+	}
+}
+
+func (e *mysqlExecutor) insertStatementGen(job *WorkerEvent) (string, []interface{}, error) {
+	e.statement.WriteString("REPLACE INTO `")
+	e.statement.WriteString(job.SDesc.RewriteSchema)
+	e.statement.WriteString("`.`")
+	e.statement.WriteString(job.SDesc.RewriteTable)
+	e.statement.WriteString("` (")
+	for i, c := range job.Columns {
+		if i != 0 {
+			e.statement.WriteString(", ")
+		}
+		e.statement.WriteString(c.Column.Name)
+	}
+	e.statement.WriteString(") VALUES (")
+	for i, c := range job.Columns {
+		if i != 0 {
+			e.statement.WriteString(", ")
+		}
+		e.statement.WriteString("?")
+		e.valuesCache = append(e.valuesCache, c.Value)
+	}
+	e.statement.WriteString(")")
+	return e.statement.String(), e.valuesCache, nil
+}
+
+func (e *mysqlExecutor) updateStatementGen(job *WorkerEvent) (string, []interface{}, error) {
+	e.statement.WriteString("UPDATE '")
+	e.statement.WriteString(job.SDesc.RewriteSchema)
+	e.statement.WriteString("`.`")
+	e.statement.WriteString(job.SDesc.RewriteTable)
+	e.statement.WriteString("`")
+	e.statement.WriteString("` SET ")
+	cnt := 0
+	for i := range job.Columns {
+		if reflect.DeepEqual(job.Columns[i].Value, job.NewColumns[i].Value) {
+			continue
+		}
+		if 0 != cnt {
+			e.statement.WriteString(", ")
+		}
+		e.statement.WriteString("`")
+		e.statement.WriteString(job.NewColumns[i].Column.Name)
+		e.statement.WriteString("`")
+		e.statement.WriteString(" = ?")
+		e.valuesCache = append(e.valuesCache, job.NewColumns[i].Value)
+		cnt++
+	}
+	if 0 == cnt {
+		return "", nil, errors.Errorf("Table %s.%s missing update columns",
+			job.Ti.Schema, job.Ti.Name)
+	}
+	cnt = 0
+	e.statement.WriteString(" WHERE ")
+	for _, v := range job.Columns {
+		if !v.Column.IsPrimary {
+			continue
+		}
+		if 0 != cnt {
+			e.statement.WriteString(" AND ")
+		}
+		e.statement.WriteString("`")
+		e.statement.WriteString(v.Column.Name)
+		e.statement.WriteString("` = ?")
+		e.valuesCache = append(e.valuesCache, v.Value)
+		cnt++
+	}
+	if 0 == cnt {
+		return "", nil, errors.Errorf("Table %s.%s missing index columns",
+			job.Ti.Schema, job.Ti.Name)
+	}
+	return e.statement.String(), e.valuesCache, nil
+}
+
+func (e *mysqlExecutor) deleteStatementGen(job *WorkerEvent) (string, []interface{}, error) {
+	e.statement.WriteString("DELETE FROM '")
+	e.statement.WriteString(job.SDesc.RewriteSchema)
+	e.statement.WriteString("`.`")
+	e.statement.WriteString(job.SDesc.RewriteTable)
+	e.statement.WriteString("`")
+	e.statement.WriteString("` WHERE ")
+	cnt := 0
+	for _, v := range job.Columns {
+		if !v.Column.IsPrimary {
+			continue
+		}
+		if 0 != cnt {
+			e.statement.WriteString(" AND ")
+		}
+		e.statement.WriteString("`")
+		e.statement.WriteString(v.Column.Name)
+		e.statement.WriteString("` = ?")
+		e.valuesCache = append(e.valuesCache, v.Value)
+		cnt++
+	}
+	if 0 == cnt {
+		return "", nil, errors.Errorf("Table %s.%s missing index columns",
+			job.Ti.Schema, job.Ti.Name)
+	}
+	return e.statement.String(), e.valuesCache, nil
+}
+
 func (e *mysqlExecutor) exec(job *WorkerEvent) error {
 	if nil == e.txn {
 		return errors.New("Exec out of transaction")
@@ -146,13 +273,16 @@ func (e *mysqlExecutor) exec(job *WorkerEvent) error {
 	if nil == e.valuesCache {
 		e.valuesCache = make([]interface{}, 0, len(job.Columns))
 	}
-	stmt := ""
-	for _, v := range job.Columns {
-		e.valuesCache = append(e.valuesCache, v.Value)
+	stmt, values, err := e.statementGen(job)
+	if nil != err {
+		return errors.Trace(err)
 	}
-	_, err := e.txn.Exec(stmt, e.valuesCache...)
-	e.valuesCache = e.valuesCache[0:0]
-	return err
+	/*if _, err = e.txn.Exec(stmt, values...); nil != err {
+		return errors.Trace(err)
+	}*/
+	logrus.Infof("Statement %s, values %v",
+		stmt, values)
+	return nil
 }
 
 func (e *mysqlExecutor) Rollback() error {

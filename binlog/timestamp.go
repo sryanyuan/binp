@@ -57,6 +57,6 @@ func decodeTimestamp2(r *serialize.BinReader, dec uint16) (interface{}, error) {
 		return formatZeroTime(int(usec), int(dec)), nil
 	}
 
-	tm := time.Unix(sec, usec)
-	return tm.String(), nil
+	tm := time.Unix(sec, usec*1000)
+	return formatTimeWithDecimals(tm, int(dec)), nil
 }
