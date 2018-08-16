@@ -152,6 +152,10 @@ func (e *EventHandler) handleEvent() error {
 
 func (e *EventHandler) onBinlogEvent(event *binlog.Event) error {
 	var err error
+	var point mconn.ReplicationPoint
+	if event.Header.LogPos > 0 {
+		point.Offset = event.Header.LogPos
+	}
 
 	// Here we interest is to record the current replication point(position or gtid)
 	// and filter event we do not interested. Column filter and rewrite will also processed here.
@@ -165,6 +169,8 @@ func (e *EventHandler) onBinlogEvent(event *binlog.Event) error {
 		{
 			evt := event.Payload.Rotate
 			logrus.Infof("Rotate to binlog %v:%v", evt.NextName, evt.Position)
+			point.Filename = evt.NextName
+			point.Offset = uint32(evt.Position)
 		}
 	case binlog.QueryEventType:
 		{
@@ -177,7 +183,7 @@ func (e *EventHandler) onBinlogEvent(event *binlog.Event) error {
 		{
 			evt := event.Payload.Rows
 			logrus.Debug(evt)
-			if err = e.onRowsEvent(event); nil != err {
+			if err = e.onRowsEvent(&point, event); nil != err {
 				return errors.Trace(err)
 			}
 		}

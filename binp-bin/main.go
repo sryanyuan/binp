@@ -2,11 +2,13 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/sryanyuan/binp/dbg"
 	"github.com/sryanyuan/binp/rule"
 
 	"github.com/juju/errors"
@@ -82,6 +84,13 @@ func main() {
 		handler.Close()
 		close(eh)
 	}()
+
+	if 0 != dbg.Get().PprofPort {
+		logrus.Infof("Open pprof port at %d", dbg.Get().PprofPort)
+		go func() {
+			logrus.Error(http.ListenAndServe(fmt.Sprintf(":%d", dbg.Get().PprofPort), nil))
+		}()
+	}
 
 	err = handler.handleEvent()
 	if nil != err {

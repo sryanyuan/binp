@@ -103,7 +103,6 @@ func (c *Conn) close() {
 	if c.status == connStatusConnected &&
 		c.conn != nil {
 		c.conn.Close()
-		c.conn = nil
 		c.status = connStatusClosed
 	}
 }

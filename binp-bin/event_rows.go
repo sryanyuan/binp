@@ -3,11 +3,12 @@ package main
 import (
 	"github.com/juju/errors"
 	"github.com/sryanyuan/binp/binlog"
+	"github.com/sryanyuan/binp/mconn"
 	"github.com/sryanyuan/binp/tableinfo"
 	"github.com/sryanyuan/binp/worker"
 )
 
-func (e *EventHandler) onRowsEvent(evt *binlog.Event) error {
+func (e *EventHandler) onRowsEvent(point *mconn.ReplicationPoint, evt *binlog.Event) error {
 	revt := evt.Payload.Rows
 	if nil == revt {
 		return errors.New("Nil rows payload")
@@ -51,8 +52,10 @@ func (e *EventHandler) onRowsEvent(evt *binlog.Event) error {
 		} else if revt.Action == binlog.RowDelete {
 			job.Etype = worker.WorkerEventRowDelete
 		}
-		if err := e.wmgr.DispatchWorkerEvent(&job, e.cfg.DispatchPolicy); nil != err {
+		if rplChecked, err := e.wmgr.DispatchWorkerEvent(&job, e.cfg.DispatchPolicy); nil != err {
 			return errors.Trace(err)
+		} else if rplChecked {
+			e.strw.writePoint(point)
 		}
 		if revt.Action == binlog.RowUpdate {
 			i += 2

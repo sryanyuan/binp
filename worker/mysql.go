@@ -10,6 +10,7 @@ import (
 	"github.com/juju/errors"
 	"github.com/ngaut/log"
 	"github.com/sirupsen/logrus"
+	"github.com/sryanyuan/binp/dbg"
 	"github.com/sryanyuan/binp/utils"
 	// Import mysql driver
 	_ "github.com/go-sql-driver/mysql"
@@ -191,11 +192,10 @@ func (e *mysqlExecutor) insertStatementGen(job *WorkerEvent) (string, []interfac
 }
 
 func (e *mysqlExecutor) updateStatementGen(job *WorkerEvent) (string, []interface{}, error) {
-	e.statement.WriteString("UPDATE '")
+	e.statement.WriteString("UPDATE `")
 	e.statement.WriteString(job.SDesc.RewriteSchema)
 	e.statement.WriteString("`.`")
 	e.statement.WriteString(job.SDesc.RewriteTable)
-	e.statement.WriteString("`")
 	e.statement.WriteString("` SET ")
 	cnt := 0
 	for i := range job.Columns {
@@ -239,11 +239,10 @@ func (e *mysqlExecutor) updateStatementGen(job *WorkerEvent) (string, []interfac
 }
 
 func (e *mysqlExecutor) deleteStatementGen(job *WorkerEvent) (string, []interface{}, error) {
-	e.statement.WriteString("DELETE FROM '")
+	e.statement.WriteString("DELETE FROM `")
 	e.statement.WriteString(job.SDesc.RewriteSchema)
 	e.statement.WriteString("`.`")
 	e.statement.WriteString(job.SDesc.RewriteTable)
-	e.statement.WriteString("`")
 	e.statement.WriteString("` WHERE ")
 	cnt := 0
 	for _, v := range job.Columns {
@@ -277,11 +276,15 @@ func (e *mysqlExecutor) exec(job *WorkerEvent) error {
 	if nil != err {
 		return errors.Trace(err)
 	}
-	/*if _, err = e.txn.Exec(stmt, values...); nil != err {
-		return errors.Trace(err)
-	}*/
-	logrus.Infof("Statement %s, values %v",
-		stmt, values)
+	if dbg.Get().Debug {
+		logrus.Infof("Statement %s, values %v",
+			stmt, values)
+	} else {
+		if _, err = e.txn.Exec(stmt, values...); nil != err {
+			return errors.Trace(err)
+		}
+	}
+
 	return nil
 }
 

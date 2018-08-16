@@ -5,6 +5,7 @@ import (
 	"hash/crc32"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/sryanyuan/binp/utils"
 
@@ -16,6 +17,7 @@ const (
 	minWorkerCount       = 1
 	workerReportChanSize = 2560
 	workerJobChanSize    = 2560
+	rplPointSaveInterval = 15
 )
 
 type workerReport struct {
@@ -26,12 +28,13 @@ type workerReport struct {
 
 // WorkerManager manages all workers
 type WorkerManager struct {
-	workers []*worker
-	wreport chan *workerReport
-	done    context.Context
-	stopFn  context.CancelFunc
-	wg      sync.WaitGroup
-	jobWg   sync.WaitGroup
+	workers          []*worker
+	wreport          chan *workerReport
+	done             context.Context
+	stopFn           context.CancelFunc
+	wg               sync.WaitGroup
+	jobWg            sync.WaitGroup
+	lastRplPointTime int64
 }
 
 // NewWorkerManager creates a new WorkerManager
@@ -43,8 +46,9 @@ func NewWorkerManager(cfg *WorkerConfig) (*WorkerManager, error) {
 	}
 
 	wm := &WorkerManager{
-		wreport: make(chan *workerReport, workerReportChanSize),
-		workers: make([]*worker, 0, workerCount),
+		wreport:          make(chan *workerReport, workerReportChanSize),
+		workers:          make([]*worker, 0, workerCount),
+		lastRplPointTime: time.Now().Unix(),
 	}
 
 	// Create executor
@@ -127,8 +131,8 @@ func (w *WorkerManager) workerReportLoop() {
 	}
 }
 
-// DispatchWorkerEvent dispatchs WorkerEvent to worker
-func (w *WorkerManager) DispatchWorkerEvent(job *WorkerEvent, dispPolicy int) error {
+// DispatchWorkerEvent dispatchs WorkerEvent to worker, return true if replication point is checked
+func (w *WorkerManager) DispatchWorkerEvent(job *WorkerEvent, dispPolicy int) (bool, error) {
 	index := -1
 	var key string
 	if DispatchPolicyPrimaryKey == dispPolicy {
@@ -144,11 +148,26 @@ func (w *WorkerManager) DispatchWorkerEvent(job *WorkerEvent, dispPolicy int) er
 		key = utils.GetTableKey(job.SDesc.RewriteSchema, job.SDesc.RewriteTable)
 	}
 	if "" == key {
-		return errors.Errorf("Can't get job dispatch key, dispatch policy = %d, job = %v", dispPolicy, job)
+		return false, errors.Errorf("Can't get job dispatch key, dispatch policy = %d, job = %v", dispPolicy, job)
 	}
 	index = int(crc32.ChecksumIEEE([]byte(key))) % len(w.workers)
 	w.workers[index].push(job)
 	w.jobWg.Add(1)
 
-	return nil
+	// Need wait and write the lastest replication point
+	rplPointChecked := false
+	if rplPointChecked = w.needSaveRplPoint(); rplPointChecked {
+		w.jobWg.Wait()
+		w.lastRplPointTime = time.Now().Unix()
+	}
+
+	return rplPointChecked, nil
+}
+
+func (w *WorkerManager) needSaveRplPoint() bool {
+	tn := time.Now().Unix()
+	if tn-w.lastRplPointTime > rplPointSaveInterval {
+		return true
+	}
+	return false
 }
