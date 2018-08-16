@@ -11,7 +11,7 @@ import (
 type MariadbGTIDEvent struct {
 	DomainID       uint32
 	ServerID       uint32
-	SequenceNumber uint32
+	SequenceNumber uint64
 }
 
 // Decode decodes the binary data into payload
@@ -19,7 +19,7 @@ func (e *MariadbGTIDEvent) Decode(data []byte) error {
 	var err error
 	r := serialize.NewBinReader(data)
 
-	e.SequenceNumber, err = r.ReadUint32()
+	e.SequenceNumber, err = r.ReadUint64()
 	if nil != err {
 		return errors.Trace(err)
 	}

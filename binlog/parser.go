@@ -239,6 +239,7 @@ func (p *Parser) parsePayload(event *Event, data []byte) error {
 	case MariadbGTIDEventType:
 		{
 			evt := &MariadbGTIDEvent{}
+			evt.ServerID = event.Header.ServerID
 			event.Payload.Parsed = true
 			event.Payload.MariadbGTID = evt
 			payload = evt
