@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 
 	"github.com/juju/errors"
-	"github.com/sirupsen/logrus"
 	"github.com/sryanyuan/binp/rule"
 	"github.com/sryanyuan/binp/serialize"
 )
@@ -74,8 +73,6 @@ func (p *Parser) Parse(data []byte) (*Event, error) {
 				}
 			}
 		}
-	} else {
-		logrus.Debugf("Unparsed binlog event %d", event.Header.EventType)
 	}
 
 	return event, errors.Trace(err)

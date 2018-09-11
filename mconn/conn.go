@@ -126,6 +126,7 @@ func (c *Conn) Connect(ds *DataSource, database string) error {
 	c.conn = conn
 	c.r = bufio.NewReader(c)
 	c.status = connStatusConnected
+	c.resetSequence()
 
 	// Receive handshake from server
 	if err = c.handshake(ds.Username, ds.Password, database); nil != err {

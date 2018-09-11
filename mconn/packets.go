@@ -440,6 +440,10 @@ func (p *PacketErr) Decode(data []byte) error {
 	var err error
 	r := serialize.NewBinReader(data)
 
+	p.Header, err = r.ReadUint8()
+	if nil != err {
+		return errors.Trace(err)
+	}
 	if p.Header != PacketHeaderERR {
 		return errors.Errorf("Not a packet err, header = %v", p.Header)
 	}
